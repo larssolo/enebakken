@@ -1,0 +1,9 @@
+node_modules/
+
+# Hemmeligheder — connection strings, API-nøgler
+.env
+.env.*
+!.env.example
+
+# Lokal Neon-tilstand
+.neon/
