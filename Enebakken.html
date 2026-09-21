@@ -27,6 +27,8 @@
             --horse-body: #7B2D26;
             --horse-saddle: #E4C989;
             --horse-accent: #3B5D42;
+            --confetti-blue: #006AA7;
+            --confetti-yellow: #FECC02;
             color-scheme: light;
         }
         @media (prefers-color-scheme: dark) {
@@ -102,6 +104,47 @@
             margin: 0 auto;
             padding-inline: 20px;
             padding-block: 40px 56px;
+        }
+
+        #confetti-layer {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 999;
+        }
+        .confetti-piece {
+            position: absolute;
+            top: -20px;
+            width: 8px;
+            height: 14px;
+            border-radius: 2px;
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .page.shake { animation: screenShake 0.5s ease; }
+            @keyframes screenShake {
+                0%, 100% { transform: translateX(0) rotate(0); }
+                10% { transform: translateX(-9px) rotate(-0.6deg); }
+                20% { transform: translateX(8px) rotate(0.6deg); }
+                30% { transform: translateX(-7px) rotate(-0.4deg); }
+                40% { transform: translateX(6px) rotate(0.4deg); }
+                50% { transform: translateX(-5px); }
+                60% { transform: translateX(4px); }
+                70% { transform: translateX(-3px); }
+                80% { transform: translateX(2px); }
+                90% { transform: translateX(-1px); }
+            }
+
+            .confetti-piece {
+                animation-name: confettiFall;
+                animation-timing-function: cubic-bezier(0.35, 0.2, 0.6, 1);
+                animation-fill-mode: forwards;
+            }
+            @keyframes confettiFall {
+                0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+                100% { transform: translate(var(--drift), 105vh) rotate(var(--rot)); opacity: 0.85; }
+            }
         }
 
         header.hero {
@@ -354,6 +397,7 @@
 <body>
 
 <div class="plank-bg"></div>
+<div id="confetti-layer" aria-hidden="true"></div>
 <div class="page">
     <header class="hero">
         <svg class="hero-icon" viewBox="0 0 140 120" aria-hidden="true">
@@ -379,13 +423,13 @@
     </header>
 
     <nav class="tabs" role="tablist">
-        <button type="button" class="tab-btn active-close" role="tab" aria-selected="true" aria-controls="luk" onclick="switchTab('luk', this)">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1.5" fill="currentColor" opacity="0.92"/><circle cx="15" cy="12" r="1.3" fill="var(--card-bg)"/></svg>
-            Luk ned
-        </button>
         <button type="button" class="tab-btn" role="tab" aria-selected="false" aria-controls="aaben" onclick="switchTab('aaben', this)">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="4" y="3" width="3" height="18" rx="1" fill="currentColor" opacity="0.92"/><path d="M8 3 L18 6 L18 18 L8 21 Z" fill="currentColor" opacity="0.55"/><circle cx="10.5" cy="12" r="1.1" fill="var(--card-bg)"/></svg>
             Åbn op
+        </button>
+        <button type="button" class="tab-btn active-close" role="tab" aria-selected="true" aria-controls="luk" onclick="switchTab('luk', this)">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1.5" fill="currentColor" opacity="0.92"/><circle cx="15" cy="12" r="1.3" fill="var(--card-bg)"/></svg>
+            Luk ned
         </button>
     </nav>
 
@@ -439,6 +483,14 @@
                 <li class="task-item" style="--i:10" onclick="toggleTask(event, this)">
                     <input type="checkbox" aria-label="Luk lågen">
                     <label>Luk lågen</label>
+                </li>
+                <li class="task-item" style="--i:11" onclick="toggleTask(event, this)">
+                    <input type="checkbox" aria-label="Fyld brændekurve">
+                    <label>Fyld brændekurve</label>
+                </li>
+                <li class="task-item" style="--i:12" onclick="toggleTask(event, this)">
+                    <input type="checkbox" aria-label="Fortæl ved lejlighed hvad der er taget af husets madlager">
+                    <label>Fortæl ved lejlighed hvad der er taget af husets madlager</label>
                 </li>
             </ul>
             <button type="button" class="reset-btn" onclick="resetCheckboxes('luk')">Nulstil lukke-listen</button>
@@ -502,6 +554,38 @@
             checkbox.checked = !checkbox.checked;
         }
         element.classList.toggle('completed', checkbox.checked);
+
+        const container = element.closest('.tab-content');
+        if (checkbox.checked && container) {
+            const boxes = container.querySelectorAll('input[type="checkbox"]');
+            const allChecked = Array.from(boxes).every(box => box.checked);
+            if (allChecked) celebrate();
+        }
+    }
+
+    function celebrate() {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        const page = document.querySelector('.page');
+        page.classList.remove('shake');
+        void page.offsetWidth;
+        page.classList.add('shake');
+        setTimeout(() => page.classList.remove('shake'), 500);
+
+        const layer = document.getElementById('confetti-layer');
+        const colors = ['var(--confetti-blue)', 'var(--confetti-yellow)'];
+        for (let i = 0; i < 40; i++) {
+            const piece = document.createElement('div');
+            piece.className = 'confetti-piece';
+            piece.style.left = (Math.random() * 100) + '%';
+            piece.style.backgroundColor = colors[i % 2];
+            piece.style.animationDuration = (0.9 + Math.random() * 0.8) + 's';
+            piece.style.animationDelay = (Math.random() * 0.25) + 's';
+            piece.style.setProperty('--drift', (Math.random() * 80 - 40) + 'px');
+            piece.style.setProperty('--rot', (Math.random() * 720 - 360) + 'deg');
+            layer.appendChild(piece);
+        }
+        setTimeout(() => { layer.innerHTML = ''; }, 2200);
     }
 
     function resetCheckboxes(containerId) {
