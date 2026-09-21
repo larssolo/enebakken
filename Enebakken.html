@@ -24,9 +24,6 @@
             --border: #E4D3B0;
             --shadow: rgba(58, 30, 14, 0.28);
             --check-mark: #FBF5E9;
-            --horse-body: #7B2D26;
-            --horse-saddle: #E4C989;
-            --horse-accent: #3B5D42;
             --confetti-blue: #006AA7;
             --confetti-yellow: #FECC02;
             color-scheme: light;
@@ -46,13 +43,10 @@
                 --forest-dark: #55805f;
                 --forest-tint: #24332a;
                 --gold: #E0B65C;
-                --gold-soft: #6b5427;
+                --gold-soft: #F0D9A3;
                 --border: #4a3627;
                 --shadow: rgba(0, 0, 0, 0.55);
                 --check-mark: #241914;
-                --horse-body: #D97463;
-                --horse-saddle: #6b5427;
-                --horse-accent: #7FAE8C;
                 color-scheme: dark;
             }
         }
@@ -70,13 +64,10 @@
             --forest-dark: #55805f;
             --forest-tint: #24332a;
             --gold: #E0B65C;
-            --gold-soft: #6b5427;
+            --gold-soft: #F0D9A3;
             --border: #4a3627;
             --shadow: rgba(0, 0, 0, 0.55);
             --check-mark: #241914;
-            --horse-body: #D97463;
-            --horse-saddle: #6b5427;
-            --horse-accent: #7FAE8C;
             color-scheme: dark;
         }
 
@@ -153,10 +144,10 @@
         }
 
         .hero-icon {
-            width: 96px;
-            height: 82px;
+            width: 112px;
+            height: 118px;
             margin: 0 auto 6px;
-            transform-origin: 50% 92%;
+            transform-origin: 50% 88%;
         }
 
         @media (prefers-reduced-motion: no-preference) {
@@ -400,23 +391,26 @@
 <div id="confetti-layer" aria-hidden="true"></div>
 <div class="page">
     <header class="hero">
-        <svg class="hero-icon" viewBox="0 0 140 120" aria-hidden="true">
-            <rect x="40" y="82" width="11" height="28" rx="5" fill="var(--horse-body)"/>
-            <rect x="58" y="86" width="11" height="24" rx="5" fill="var(--horse-body)"/>
-            <rect x="86" y="86" width="11" height="24" rx="5" fill="var(--horse-body)"/>
-            <rect x="104" y="82" width="11" height="28" rx="5" fill="var(--horse-body)"/>
-            <path d="M118,58 C132,52 134,70 124,78 C119,81 114,76 116,70 Z" fill="var(--horse-body)"/>
-            <ellipse cx="78" cy="66" rx="38" ry="24" fill="var(--horse-body)"/>
-            <path d="M46,58 C34,44 34,20 54,10 C66,4 76,10 74,22 C72,34 64,40 64,52 C64,60 56,64 46,58 Z" fill="var(--horse-body)"/>
-            <path d="M56,12 C54,4 62,2 66,8 C68,12 62,16 56,12 Z" fill="var(--horse-body)"/>
-            <ellipse cx="76" cy="54" rx="20" ry="9" fill="var(--horse-saddle)"/>
-            <g fill="var(--horse-accent)">
-                <circle cx="95" cy="66" r="3"/><circle cx="101" cy="60" r="2"/><circle cx="101" cy="72" r="2"/>
-                <circle cx="90" cy="60" r="2"/><circle cx="90" cy="72" r="2"/>
+        <svg class="hero-icon" viewBox="0 0 200 210" aria-hidden="true">
+            <circle cx="100" cy="112" r="72" fill="none" stroke="var(--gold-soft)" stroke-width="3.5"/>
+
+            <g fill="var(--gold-soft)">
+                <g transform="translate(48,176)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
+                <g transform="translate(64,178) scale(0.7)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
+                <g transform="translate(152,176)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
+                <g transform="translate(136,178) scale(0.7)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
             </g>
-            <g fill="var(--horse-accent)">
-                <circle cx="60" cy="70" r="2.6"/><circle cx="65" cy="65" r="1.8"/><circle cx="65" cy="75" r="1.8"/>
+
+            <g fill="var(--gold-soft)">
+                <g transform="translate(85,70) rotate(-15)"><path d="M-7,0 C-9,-15 -22,-20 -32,-30 C-38,-36 -36,-44 -28,-46 C-22,-47 -16,-42 -12,-35 C-13,-42 -14,-52 -8,-58 C-4,-62 4,-62 8,-58 C14,-52 13,-42 12,-35 C16,-42 22,-47 28,-46 C36,-44 38,-36 32,-30 C22,-20 9,-15 7,0 Z"/></g>
+                <g transform="translate(115,70) rotate(15) scale(-1,1)"><path d="M-7,0 C-9,-15 -22,-20 -32,-30 C-38,-36 -36,-44 -28,-46 C-22,-47 -16,-42 -12,-35 C-13,-42 -14,-52 -8,-58 C-4,-62 4,-62 8,-58 C14,-52 13,-42 12,-35 C16,-42 22,-47 28,-46 C36,-44 38,-36 32,-30 C22,-20 9,-15 7,0 Z"/></g>
             </g>
+
+            <path d="M58,186 C56,168 62,152 78,148 C85,146 92,145 100,145 C108,145 115,146 122,148 C138,152 144,168 142,186 Z" fill="var(--gold-soft)"/>
+            <path d="M72,100 C70,88 76,76 88,72 C92,70 108,70 112,72 C124,76 130,88 128,100 C127,106 122,110 100,110 C78,110 73,106 72,100 Z" fill="var(--gold-soft)"/>
+            <path d="M88,105 C86,115 85,128 86,140 C86,148 92,152 100,152 C108,152 114,148 114,140 C115,128 114,115 112,105 C108,112 92,112 88,105 Z" fill="var(--gold-soft)"/>
+            <path d="M74,92 C64,88 56,80 57,70 C66,72 76,80 80,90 Z" fill="var(--gold-soft)"/>
+            <path d="M126,92 C136,88 144,80 143,70 C134,72 124,80 120,90 Z" fill="var(--gold-soft)"/>
         </svg>
         <h1>Enebakken<span>Tjekliste</span></h1>
         <p class="tagline">Mormors Sverige</p>
