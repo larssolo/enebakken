@@ -1,0 +1,11 @@
+# Backend og værktøj hører ikke til på websitet. Neon-funktionen og
+# migrationerne udrulles med `neon deploy`, ikke med Vercel, og skal
+# ikke kunne hentes fra www.enebakken.info.
+
+migrations/
+neon.ts
+hello.ts
+skills-lock.json
+.mcp.json
+.claude/
+node_modules/
