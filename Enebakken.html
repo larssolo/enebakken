@@ -201,7 +201,6 @@
             transition: background-color 0.25s ease, color 0.25s ease, transform 0.15s ease, border-color 0.25s ease;
         }
 
-        .tab-btn svg { flex-shrink: 0; transition: transform 0.3s ease; }
         .tab-btn:active { transform: scale(0.97); }
 
         .tab-btn.active-close {
@@ -418,7 +417,6 @@
             color: var(--gold-dark);
             border-color: var(--gold);
         }
-        .tab-btn.active-close svg, .tab-btn.active-open svg, .tab-btn.active-photos svg { transform: scale(1.12); }
 
         /* ---- section title row (with owner edit toggle) ---- */
         .section-title-row {
@@ -554,6 +552,26 @@
             transition: background-color 0.2s ease;
         }
         .lightbox-close:hover { background: rgba(255,255,255,0.28); }
+        .lightbox-nav {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+        .lightbox-nav:hover { background: rgba(255,255,255,0.28); }
+        .lightbox-nav[hidden] { display: none; }
+        .lightbox-prev { left: 12px; }
+        .lightbox-next { right: 12px; }
         .lightbox-caption {
             position: fixed;
             bottom: 22px;
@@ -792,7 +810,6 @@
             Luk ned
         </button>
         <button type="button" class="tab-btn" role="tab" aria-selected="false" aria-controls="billeder" onclick="switchTab('billeder', this)">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="currentColor" opacity="0.85"/><circle cx="8.5" cy="10.5" r="1.6" fill="var(--card-bg)"/><path d="M4 17 L9 12 L13 15 L16 12 L20 16 L20 17 Z" fill="var(--card-bg)" opacity="0.9"/></svg>
             Billeder
         </button>
     </nav>
@@ -968,6 +985,12 @@
     <dialog id="lightbox-dialog" class="lightbox-dialog">
         <button type="button" class="lightbox-close" onclick="closeLightbox()" aria-label="Luk">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 5 L19 19 M19 5 L5 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="lightboxPrev()" aria-label="Forrige billede">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5 L8 12 L15 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" onclick="lightboxNext()" aria-label="Næste billede">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5 L16 12 L9 19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <img id="lightbox-img" src="" alt="">
         <p class="lightbox-caption" id="lightbox-caption" hidden></p>
@@ -1468,6 +1491,9 @@
         document.getElementById('upload-dialog').close();
     }
 
+    let currentPhotos = [];
+    let lightboxIndex = -1;
+
     async function loadPhotos() {
         const status = document.getElementById('photo-status');
         const grid = document.getElementById('photo-grid');
@@ -1479,14 +1505,15 @@
             return;
         }
         grid.innerHTML = '';
-        if (r.body.items.length === 0) {
+        currentPhotos = r.body.items;
+        if (currentPhotos.length === 0) {
             status.hidden = false;
             status.textContent = 'Ingen billeder endnu.';
             return;
         }
         status.hidden = true;
 
-        r.body.items.forEach(function (photo) {
+        currentPhotos.forEach(function (photo, index) {
             const card = document.createElement('div');
             card.className = 'photo-card';
 
@@ -1494,7 +1521,7 @@
             img.src = photo.url;
             img.alt = photo.caption || 'Billede fra Enebakken';
             img.loading = 'lazy';
-            img.onclick = function () { openLightbox(photo.url, photo.caption); };
+            img.onclick = function () { openLightbox(index); };
             card.appendChild(img);
 
             if (me.role === 'owner' || me.userId === photo.uploaded_by) {
@@ -1517,23 +1544,72 @@
         });
     }
 
-    function openLightbox(url, caption) {
-        document.getElementById('lightbox-img').src = url;
-        document.getElementById('lightbox-img').alt = caption || 'Billede fra Enebakken';
-        const captionEl = document.getElementById('lightbox-caption');
-        captionEl.textContent = caption || '';
-        captionEl.hidden = !caption;
+    function openLightbox(index) {
+        lightboxIndex = index;
+        renderLightboxPhoto();
         document.getElementById('lightbox-dialog').showModal();
+    }
+
+    function renderLightboxPhoto() {
+        const photo = currentPhotos[lightboxIndex];
+        document.getElementById('lightbox-img').src = photo.url;
+        document.getElementById('lightbox-img').alt = photo.caption || 'Billede fra Enebakken';
+        const captionEl = document.getElementById('lightbox-caption');
+        captionEl.textContent = photo.caption || '';
+        captionEl.hidden = !photo.caption;
+        document.getElementById('lightbox-prev').hidden = lightboxIndex <= 0;
+        document.getElementById('lightbox-next').hidden = lightboxIndex >= currentPhotos.length - 1;
+    }
+
+    function lightboxPrev() {
+        if (lightboxIndex > 0) {
+            lightboxIndex--;
+            renderLightboxPhoto();
+        }
+    }
+
+    function lightboxNext() {
+        if (lightboxIndex < currentPhotos.length - 1) {
+            lightboxIndex++;
+            renderLightboxPhoto();
+        }
     }
 
     function closeLightbox() {
         document.getElementById('lightbox-dialog').close();
         document.getElementById('lightbox-img').src = '';
+        lightboxIndex = -1;
     }
 
     document.getElementById('lightbox-dialog').addEventListener('click', function (event) {
         if (event.target === this) closeLightbox();
     });
+
+    // Listens on document, not the dialog, and checks .open itself: hiding
+    // whichever nav button currently has focus (arriving at the first/last
+    // photo) knocks keyboard focus out of the dialog's subtree, so a
+    // listener scoped to the dialog stops receiving events after that.
+    document.addEventListener('keydown', function (event) {
+        if (!document.getElementById('lightbox-dialog').open) return;
+        if (event.key === 'ArrowLeft') lightboxPrev();
+        else if (event.key === 'ArrowRight') lightboxNext();
+    });
+
+    (function () {
+        let touchStartX = null;
+        const img = document.getElementById('lightbox-img');
+        const SWIPE_THRESHOLD = 50;
+        img.addEventListener('touchstart', function (event) {
+            touchStartX = event.touches[0].clientX;
+        }, { passive: true });
+        img.addEventListener('touchend', function (event) {
+            if (touchStartX === null) return;
+            const dx = event.changedTouches[0].clientX - touchStartX;
+            touchStartX = null;
+            if (dx > SWIPE_THRESHOLD) lightboxPrev();
+            else if (dx < -SWIPE_THRESHOLD) lightboxNext();
+        });
+    })();
 
     function createTrashIcon() {
         const svgNS = 'http://www.w3.org/2000/svg';
