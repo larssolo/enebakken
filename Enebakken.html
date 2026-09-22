@@ -670,6 +670,61 @@
             color: var(--ink);
         }
 
+        /* ---- manage users ---- */
+        .manage-section { margin-bottom: 20px; }
+        .manage-section h4 {
+            font-family: "Libre Franklin", sans-serif;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--ink-soft);
+            margin: 0 0 10px;
+            padding-bottom: 6px;
+            border-bottom: 2px dashed var(--border);
+        }
+        .manage-list { list-style: none; padding: 0; margin: 0; }
+        .manage-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .manage-row:last-child { border-bottom: none; }
+        .manage-row-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            overflow: hidden;
+            min-width: 0;
+        }
+        .manage-row-name {
+            color: var(--ink);
+            font-weight: 600;
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .manage-row-meta { color: var(--ink-soft); font-size: 0.78rem; }
+        .manage-empty { color: var(--ink-soft); font-size: 0.85rem; margin: 0; }
+        .manage-remove-btn {
+            flex-shrink: 0;
+            padding: 5px 10px;
+            border: 2px solid var(--border);
+            border-radius: 20px;
+            background: transparent;
+            color: var(--error);
+            font-family: "Libre Franklin", sans-serif;
+            font-weight: 600;
+            font-size: 0.76rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .manage-remove-btn:hover { border-color: var(--error); background: rgba(163, 41, 29, 0.08); }
+
         /* ---- photo board ---- */
         .add-photo-btn {
             flex-shrink: 0;
@@ -928,28 +983,43 @@
         </div>
     </dialog>
 
-    <dialog id="invite-dialog">
+    <dialog id="manage-users-dialog">
         <div class="dialog-inner">
-            <h3>Inviter nogen</h3>
-            <form id="invite-form" onsubmit="return handleInvite(event)">
-                <div class="form-row">
-                    <label for="invite-email">E-mail på den du vil invitere</label>
-                    <input type="email" id="invite-email" required autocomplete="off">
-                </div>
-                <p class="form-error" id="invite-error" aria-live="polite"></p>
-                <div class="form-actions">
+            <h3>Administrer brugere</h3>
+
+            <div class="manage-section">
+                <h4>Inviter nogen</h4>
+                <form id="invite-form" onsubmit="return handleInvite(event)">
+                    <div class="form-row">
+                        <label for="invite-email">E-mail på den du vil invitere</label>
+                        <input type="email" id="invite-email" required autocomplete="off">
+                    </div>
+                    <p class="form-error" id="invite-error" aria-live="polite"></p>
                     <button type="submit" class="btn-primary">Opret invitation</button>
-                    <button type="button" class="btn-secondary" onclick="closeInviteDialog()">Luk</button>
+                </form>
+                <div id="invite-result" hidden>
+                    <p class="form-hint">Invitationen er klar.</p>
+                    <button type="button" class="btn-primary invite-mailto-btn" id="invite-mailto-btn" onclick="sendInviteMail()">Send invitation via mail</button>
+                    <p class="form-hint">...eller kopiér linket:</p>
+                    <div class="invite-link-row">
+                        <input type="text" id="invite-link" readonly>
+                        <button type="button" class="btn-secondary" onclick="copyInviteLink()">Kopiér</button>
+                    </div>
                 </div>
-            </form>
-            <div id="invite-result" hidden>
-                <p class="form-hint">Invitationen er klar.</p>
-                <button type="button" class="btn-primary invite-mailto-btn" id="invite-mailto-btn" onclick="sendInviteMail()">Send invitation via mail</button>
-                <p class="form-hint">...eller kopiér linket:</p>
-                <div class="invite-link-row">
-                    <input type="text" id="invite-link" readonly>
-                    <button type="button" class="btn-secondary" onclick="copyInviteLink()">Kopiér</button>
-                </div>
+            </div>
+
+            <div class="manage-section">
+                <h4>Aktive brugere</h4>
+                <ul class="manage-list" id="members-list"></ul>
+            </div>
+
+            <div class="manage-section" id="pending-invites-section" hidden>
+                <h4>Afventende invitationer</h4>
+                <ul class="manage-list" id="pending-invites-list"></ul>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeManageUsersDialog()">Luk</button>
             </div>
         </div>
     </dialog>
@@ -1127,12 +1197,12 @@
 
         if (me.role === 'owner') {
             bar.appendChild(document.createTextNode(' · '));
-            const inviteBtn = document.createElement('button');
-            inviteBtn.type = 'button';
-            inviteBtn.className = 'account-link';
-            inviteBtn.textContent = 'Inviter';
-            inviteBtn.onclick = openInviteDialog;
-            bar.appendChild(inviteBtn);
+            const manageBtn = document.createElement('button');
+            manageBtn.type = 'button';
+            manageBtn.className = 'account-link';
+            manageBtn.textContent = 'Administrer brugere';
+            manageBtn.onclick = openManageUsersDialog;
+            bar.appendChild(manageBtn);
         }
 
         bar.appendChild(document.createTextNode(' · '));
@@ -1230,19 +1300,21 @@
         await refreshMe();
     }
 
-    // ---------- invites ----------
+    // ---------- manage users (invite / members / pending invites) ----------
     let pendingInviteMailto = null;
 
-    function openInviteDialog() {
+    function openManageUsersDialog() {
         document.getElementById('invite-form').hidden = false;
         document.getElementById('invite-result').hidden = true;
         document.getElementById('invite-email').value = '';
         document.getElementById('invite-error').textContent = '';
         pendingInviteMailto = null;
-        document.getElementById('invite-dialog').showModal();
+        document.getElementById('manage-users-dialog').showModal();
+        loadMembersList();
+        loadPendingInvites();
     }
-    function closeInviteDialog() {
-        document.getElementById('invite-dialog').close();
+    function closeManageUsersDialog() {
+        document.getElementById('manage-users-dialog').close();
     }
 
     async function handleInvite(event) {
@@ -1273,6 +1345,7 @@
         document.getElementById('invite-form').hidden = true;
         document.getElementById('invite-result').hidden = false;
         document.getElementById('invite-link').value = r.body.link;
+        await loadPendingInvites();
         return false;
     }
 
@@ -1280,6 +1353,107 @@
         const input = document.getElementById('invite-link');
         input.select();
         if (navigator.clipboard) navigator.clipboard.writeText(input.value).catch(function () {});
+    }
+
+    function manageRow(nameText, metaText, btnText, onRemove) {
+        const li = document.createElement('li');
+        li.className = 'manage-row';
+
+        const info = document.createElement('div');
+        info.className = 'manage-row-info';
+        const name = document.createElement('span');
+        name.className = 'manage-row-name';
+        name.textContent = nameText;
+        const meta = document.createElement('span');
+        meta.className = 'manage-row-meta';
+        meta.textContent = metaText;
+        info.appendChild(name);
+        info.appendChild(meta);
+        li.appendChild(info);
+
+        if (onRemove) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'manage-remove-btn';
+            btn.textContent = btnText;
+            btn.onclick = onRemove;
+            li.appendChild(btn);
+        }
+        return li;
+    }
+
+    async function loadMembersList() {
+        const list = document.getElementById('members-list');
+        list.innerHTML = '';
+        const token = await fetchFreshToken();
+        if (!token) return;
+        const r = await apiFetch('/members', { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) return;
+        if (r.body.items.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'manage-empty';
+            empty.textContent = 'Ingen endnu.';
+            list.appendChild(empty);
+            return;
+        }
+        r.body.items.forEach(function (m) {
+            const isOwner = m.role === 'owner';
+            list.appendChild(manageRow(
+                m.display_name || m.user_id,
+                isOwner ? 'Ejer' : 'Medlem',
+                'Fjern adgang',
+                isOwner ? null : function () { removeMember(m.user_id, m.display_name); }
+            ));
+        });
+    }
+
+    async function removeMember(userId, name) {
+        if (!confirm('Fjern adgang for ' + (name || 'denne bruger') + '?')) return;
+        const token = await fetchFreshToken();
+        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        const r = await apiFetch('/members', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ userId: userId }),
+        });
+        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke fjerne adgangen'); return; }
+        await loadMembersList();
+    }
+
+    async function loadPendingInvites() {
+        const section = document.getElementById('pending-invites-section');
+        const list = document.getElementById('pending-invites-list');
+        list.innerHTML = '';
+        const token = await fetchFreshToken();
+        if (!token) return;
+        const r = await apiFetch('/invites', { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok || r.body.items.length === 0) {
+            section.hidden = true;
+            return;
+        }
+        section.hidden = false;
+        r.body.items.forEach(function (inv) {
+            const expired = new Date(inv.expires_at) < new Date();
+            list.appendChild(manageRow(
+                inv.email,
+                expired ? 'Udløbet' : 'Afventer',
+                'Annullér',
+                function () { cancelInvite(inv.id); }
+            ));
+        });
+    }
+
+    async function cancelInvite(id) {
+        if (!confirm('Annullér denne invitation?')) return;
+        const token = await fetchFreshToken();
+        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        const r = await apiFetch('/invites', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ id: id }),
+        });
+        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke annullere invitationen'); return; }
+        await loadPendingInvites();
     }
 
     function sendInviteMail() {
