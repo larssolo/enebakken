@@ -4,6 +4,9 @@
 // tampered payload, wrong issuer, alg confusion, and exp+1s all rejected;
 // exp-1s still accepted.
 
+import { callerRole } from "./db.js";
+import { err } from "./http.js";
+
 const AUTH_BASE = process.env.NEON_AUTH_BASE_URL!;
 const ISSUER = new URL(AUTH_BASE).origin;
 const JWKS_URL = `${AUTH_BASE}/.well-known/jwks.json`;
@@ -76,4 +79,20 @@ export async function authenticate(request: Request): Promise<Caller | null> {
   const auth = request.headers.get("authorization");
   if (!auth?.toLowerCase().startsWith("bearer ")) return null;
   return verifyToken(auth.slice(7));
+}
+
+export async function requireOwner(request: Request): Promise<Caller | Response> {
+  const caller = await authenticate(request);
+  if (!caller) return err(401, "Log ind for at fortsætte");
+  const role = await callerRole(caller.userId);
+  if (role !== "owner") return err(403, "Kun ejeren kan gøre dette");
+  return caller;
+}
+
+export async function requireMember(request: Request): Promise<Caller | Response> {
+  const caller = await authenticate(request);
+  if (!caller) return err(401, "Log ind for at fortsætte");
+  const role = await callerRole(caller.userId);
+  if (!role) return err(403, "Din konto har ikke adgang endnu — bed ejeren om en invitation");
+  return caller;
 }

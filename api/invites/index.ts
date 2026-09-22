@@ -1,15 +1,7 @@
-import { authenticate, type Caller } from "../_lib/auth.js";
-import { sql, callerRole } from "../_lib/db.js";
+import { requireOwner } from "../_lib/auth.js";
+import { sql } from "../_lib/db.js";
 import { json, err, isResponse } from "../_lib/http.js";
 import { randomBytes, createHash } from "node:crypto";
-
-async function requireOwner(request: Request): Promise<Caller | Response> {
-  const caller = await authenticate(request);
-  if (!caller) return err(401, "Log ind for at fortsætte");
-  const role = await callerRole(caller.userId);
-  if (role !== "owner") return err(403, "Kun ejeren kan gøre dette");
-  return caller;
-}
 
 // POST /api/invites — owner only. Body: { email }.
 // Returns the raw link; the owner shares it themselves (no email sending yet).
