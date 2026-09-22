@@ -152,41 +152,21 @@
             margin-bottom: 22px;
         }
 
-        .hero-icon {
-            width: 112px;
-            height: 118px;
-            margin: 0 auto 6px;
-            transform-origin: 50% 88%;
+        .hero-logo {
+            display: block;
+            width: min(320px, 78%);
+            height: auto;
+            margin: 0 auto;
+            transform-origin: 50% 100%;
+            filter: drop-shadow(0 6px 14px rgba(0,0,0,0.35));
         }
 
         @media (prefers-reduced-motion: no-preference) {
-            .hero-icon { animation: rock 4.5s ease-in-out infinite; }
+            .hero-logo { animation: rock 4.5s ease-in-out infinite; }
             @keyframes rock {
-                0%, 100% { transform: rotate(-3deg) translateY(0); }
-                50% { transform: rotate(3deg) translateY(-2px); }
+                0%, 100% { transform: rotate(-2deg) translateY(0); }
+                50% { transform: rotate(2deg) translateY(-2px); }
             }
-        }
-
-        h1 {
-            font-family: "Caveat", cursive;
-            font-weight: 700;
-            font-size: 3.1rem;
-            line-height: 0.95;
-            margin: 4px 0 0;
-            color: var(--gold-soft);
-            text-shadow: 0 2px 0 rgba(0,0,0,0.25);
-        }
-
-        h1 span {
-            display: block;
-            font-family: "Libre Franklin", sans-serif;
-            font-weight: 700;
-            font-size: 0.95rem;
-            letter-spacing: 0.32em;
-            text-transform: uppercase;
-            color: var(--gold-soft);
-            opacity: 0.85;
-            margin-top: 2px;
         }
 
         .tagline {
@@ -194,7 +174,7 @@
             opacity: 0.75;
             font-style: italic;
             font-size: 0.95rem;
-            margin: 8px 0 0;
+            margin: 14px 0 0;
         }
 
         .tabs {
@@ -731,28 +711,7 @@
 <div id="confetti-layer" aria-hidden="true"></div>
 <div class="page">
     <header class="hero">
-        <svg class="hero-icon" viewBox="0 0 200 210" aria-hidden="true">
-            <circle cx="100" cy="112" r="72" fill="none" stroke="var(--gold-soft)" stroke-width="3.5"/>
-
-            <g fill="var(--gold-soft)">
-                <g transform="translate(48,176)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
-                <g transform="translate(64,178) scale(0.7)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
-                <g transform="translate(152,176)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
-                <g transform="translate(136,178) scale(0.7)"><path d="M0,0 L-9,0 L-3,-11 L-9,-11 L-2,-21 L-7,-21 L0,-32 L7,-21 L2,-21 L9,-11 L3,-11 L9,0 Z"/></g>
-            </g>
-
-            <g fill="var(--gold-soft)">
-                <g transform="translate(85,70) rotate(-15)"><path d="M-7,0 C-9,-15 -22,-20 -32,-30 C-38,-36 -36,-44 -28,-46 C-22,-47 -16,-42 -12,-35 C-13,-42 -14,-52 -8,-58 C-4,-62 4,-62 8,-58 C14,-52 13,-42 12,-35 C16,-42 22,-47 28,-46 C36,-44 38,-36 32,-30 C22,-20 9,-15 7,0 Z"/></g>
-                <g transform="translate(115,70) rotate(15) scale(-1,1)"><path d="M-7,0 C-9,-15 -22,-20 -32,-30 C-38,-36 -36,-44 -28,-46 C-22,-47 -16,-42 -12,-35 C-13,-42 -14,-52 -8,-58 C-4,-62 4,-62 8,-58 C14,-52 13,-42 12,-35 C16,-42 22,-47 28,-46 C36,-44 38,-36 32,-30 C22,-20 9,-15 7,0 Z"/></g>
-            </g>
-
-            <path d="M58,186 C56,168 62,152 78,148 C85,146 92,145 100,145 C108,145 115,146 122,148 C138,152 144,168 142,186 Z" fill="var(--gold-soft)"/>
-            <path d="M72,100 C70,88 76,76 88,72 C92,70 108,70 112,72 C124,76 130,88 128,100 C127,106 122,110 100,110 C78,110 73,106 72,100 Z" fill="var(--gold-soft)"/>
-            <path d="M88,105 C86,115 85,128 86,140 C86,148 92,152 100,152 C108,152 114,148 114,140 C115,128 114,115 112,105 C108,112 92,112 88,105 Z" fill="var(--gold-soft)"/>
-            <path d="M74,92 C64,88 56,80 57,70 C66,72 76,80 80,90 Z" fill="var(--gold-soft)"/>
-            <path d="M126,92 C136,88 144,80 143,70 C134,72 124,80 120,90 Z" fill="var(--gold-soft)"/>
-        </svg>
-        <h1>Enebakken<span>Tjekliste</span></h1>
+        <img class="hero-logo" src="logo.webp" alt="Enebakken" width="500" height="236">
         <p class="tagline">Mormors Sverige</p>
     </header>
 
