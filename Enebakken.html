@@ -397,7 +397,7 @@
             font-size: 0.85rem;
             color: var(--gold-soft);
             opacity: 0.85;
-            margin-top: 10px;
+            margin-top: 16px;
             min-height: 1.3em;
         }
         .account-link {
@@ -630,6 +630,15 @@
             font-size: 0.9rem;
             padding: 10px 0;
         }
+        .upload-hint {
+            text-align: center;
+            color: var(--ink-soft);
+            font-size: 0.87rem;
+            background: var(--paper-edge);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 18px;
+        }
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -700,8 +709,6 @@
         </svg>
         <h1>Enebakken<span>Tjekliste</span></h1>
         <p class="tagline">Mormors Sverige</p>
-        <div class="account-bar" id="account-bar"></div>
-        <p class="page-banner" id="page-banner" hidden aria-live="polite"></p>
     </header>
 
     <nav class="tabs" role="tablist">
@@ -773,6 +780,7 @@
                 <p class="form-error" id="photo-upload-error" aria-live="polite"></p>
                 <button type="submit" class="btn-primary" id="photo-upload-btn">Del billede</button>
             </form>
+            <p class="upload-hint" id="upload-hint" hidden>Kun inviterede kan dele billeder her — log ind, og bed ejeren om en invitation.</p>
 
             <p class="photo-status" id="photo-status">Henter billeder...</p>
             <div class="photo-grid" id="photo-grid"></div>
@@ -791,6 +799,9 @@
     </div>
 
     <footer class="foot-note">Välkommen hem</footer>
+
+    <div class="account-bar" id="account-bar"></div>
+    <p class="page-banner" id="page-banner" hidden aria-live="polite"></p>
 
     <dialog id="auth-dialog">
         <div class="dialog-inner">
@@ -938,8 +949,13 @@
     }
 
     // ---------- auth state ----------
-    let me = { authenticated: false, email: null, role: null };
+    let me = { authenticated: false, email: null, name: null, role: null };
     let pendingInviteToken = null;
+
+    function firstName() {
+        if (!me.name) return me.email;
+        return me.name.trim().split(/\s+/)[0];
+    }
 
     async function fetchFreshToken() {
         const r = await apiFetch('/auth/token');
@@ -949,10 +965,10 @@
     async function refreshMe() {
         const token = await fetchFreshToken();
         if (!token) {
-            me = { authenticated: false, email: null, role: null };
+            me = { authenticated: false, email: null, name: null, role: null };
         } else {
             const r = await apiFetch('/me', { headers: { Authorization: 'Bearer ' + token } });
-            me = r.ok ? r.body : { authenticated: false, email: null, role: null };
+            me = r.ok ? r.body : { authenticated: false, email: null, name: null, role: null };
         }
         renderAccountBar();
         renderEditButtons();
@@ -973,7 +989,7 @@
             return;
         }
 
-        bar.appendChild(document.createTextNode('Hej, ' + me.email));
+        bar.appendChild(document.createTextNode('Hej, ' + firstName()));
 
         if (me.role === 'owner') {
             bar.appendChild(document.createTextNode(' · '));
@@ -1003,6 +1019,7 @@
     function renderPhotoUploadVisibility() {
         const canUpload = me.role === 'owner' || me.role === 'member';
         document.getElementById('photo-upload-form').hidden = !canUpload;
+        document.getElementById('upload-hint').hidden = canUpload;
     }
 
     function showPageBanner(text) {
@@ -1340,6 +1357,41 @@
         });
     }
 
+    // Downscales JPEG/PNG/WEBP to 1000px on the longest edge before upload
+    // (skipped for GIF — canvas can't re-encode one, and it would flatten
+    // any animation to a single frame). Never upscales. Falls back to the
+    // original file untouched if decoding fails for any reason.
+    async function resizeImageIfNeeded(file) {
+        if (file.type === 'image/gif') return file;
+        const MAX_EDGE = 1000;
+
+        let bitmap;
+        try {
+            bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        } catch (e) {
+            return file;
+        }
+
+        try {
+            const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+            if (scale >= 1) return file;
+
+            const targetW = Math.max(1, Math.round(bitmap.width * scale));
+            const targetH = Math.max(1, Math.round(bitmap.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+
+            const quality = file.type === 'image/png' ? undefined : 0.85;
+            const blob = await new Promise(function (resolve) { canvas.toBlob(resolve, file.type, quality); });
+            return blob || file;
+        } finally {
+            bitmap.close();
+        }
+    }
+
     async function handlePhotoUpload(event) {
         event.preventDefault();
         const fileInput = document.getElementById('photo-file');
@@ -1350,8 +1402,8 @@
 
         const file = fileInput.files[0];
         if (!file) { errorEl.textContent = 'Vælg et billede først'; return false; }
-        const MAX_BYTES = 15 * 1024 * 1024;
-        if (file.size > MAX_BYTES) { errorEl.textContent = 'Billedet er for stort (max 15 MB)'; return false; }
+        const MAX_BYTES = 20 * 1024 * 1024;
+        if (file.size > MAX_BYTES) { errorEl.textContent = 'Billedet er for stort (max 20 MB)'; return false; }
 
         submitBtn.disabled = true;
         submitBtn.textContent = 'Uploader...';
@@ -1359,17 +1411,19 @@
             const token = await fetchFreshToken();
             if (!token) { errorEl.textContent = 'Din session er udløbet — log ind igen'; return false; }
 
+            const upload = await resizeImageIfNeeded(file);
+
             const presign = await apiFetch('/photos/presign', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                body: JSON.stringify({ contentType: file.type }),
+                body: JSON.stringify({ contentType: upload.type }),
             });
             if (!presign.ok) { errorEl.textContent = (presign.body && presign.body.error) || 'Kunne ikke starte upload'; return false; }
 
             const putRes = await fetch(presign.body.upload_url, {
                 method: 'PUT',
-                headers: { 'Content-Type': file.type },
-                body: file,
+                headers: { 'Content-Type': upload.type },
+                body: upload,
             });
             if (!putRes.ok) { errorEl.textContent = 'Upload fejlede — prøv igen'; return false; }
 
