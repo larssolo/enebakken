@@ -509,7 +509,7 @@
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .edit-actions .btn-primary, .edit-actions .btn-secondary { flex: 1; padding: 10px 12px; font-size: 0.9rem; }
 
-        .photo-upload-form[hidden], .edit-actions[hidden], .reset-btn[hidden] { display: none; }
+        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden] { display: none; }
 
         @media (prefers-reduced-motion: no-preference) {
             .tab-content.active .task-item-edit { animation: itemIn 0.3s ease both; }
@@ -616,14 +616,59 @@
         }
 
         /* ---- photo board ---- */
-        .photo-upload-form {
+        .add-photo-btn {
+            flex-shrink: 0;
+            width: 34px;
+            height: 34px;
+            margin-top: 2px;
+            padding: 0;
             display: flex;
-            flex-direction: column;
-            margin-bottom: 20px;
-            padding: 16px;
-            border: 2px dashed var(--border);
-            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            border: 2px solid var(--gold);
+            background: var(--gold-tint);
+            color: var(--gold-dark);
+            font-size: 1.3rem;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
         }
+        .add-photo-btn:hover { background: var(--gold); color: var(--check-mark); }
+        .add-photo-btn:active { transform: scale(0.92); }
+
+        .file-picker {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 14px;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--ink-soft);
+            font-size: 0.92rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease, color 0.2s ease;
+        }
+        .file-picker:hover { border-color: var(--gold); }
+        .file-picker.has-file {
+            border-style: solid;
+            border-color: var(--forest);
+            color: var(--ink);
+        }
+        .file-picker-icon { flex-shrink: 0; color: var(--gold); }
+        .file-picker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-picker input[type="file"] {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
         .photo-status {
             text-align: center;
             color: var(--ink-soft);
@@ -766,20 +811,10 @@
         </div>
 
         <div id="billeder" class="tab-content" role="tabpanel">
-            <h2 class="section-title" id="billeder-title">Opslagstavlen</h2>
-
-            <form id="photo-upload-form" class="photo-upload-form" onsubmit="return handlePhotoUpload(event)" hidden>
-                <div class="form-row">
-                    <label for="photo-file">Vælg billede</label>
-                    <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp,image/gif" required>
-                </div>
-                <div class="form-row">
-                    <label for="photo-caption">Billedtekst (valgfri)</label>
-                    <input type="text" id="photo-caption" maxlength="500">
-                </div>
-                <p class="form-error" id="photo-upload-error" aria-live="polite"></p>
-                <button type="submit" class="btn-primary" id="photo-upload-btn">Del billede</button>
-            </form>
+            <div class="section-title-row">
+                <h2 class="section-title" id="billeder-title">Opslagstavlen</h2>
+                <button type="button" class="add-photo-btn" id="add-photo-btn" onclick="openUploadDialog()" hidden aria-label="Del et billede">+</button>
+            </div>
             <p class="upload-hint" id="upload-hint" hidden>Kun inviterede kan dele billeder her — log ind, og bed ejeren om en invitation.</p>
 
             <p class="photo-status" id="photo-status">Henter billeder...</p>
@@ -873,6 +908,34 @@
             </div>
         </div>
     </dialog>
+
+    <dialog id="upload-dialog">
+        <div class="dialog-inner">
+            <h3>Del et billede</h3>
+            <form id="photo-upload-form" onsubmit="return handlePhotoUpload(event)">
+                <div class="form-row">
+                    <label>Vælg billede</label>
+                    <div class="file-picker" id="file-picker">
+                        <svg class="file-picker-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 3 L12 15 M12 3 L7 8 M12 3 L17 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M4 16 L4 19 C4 20.1 4.9 21 6 21 L18 21 C19.1 21 20 20.1 20 19 L20 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span id="file-picker-text">Vælg et billede...</span>
+                        <input type="file" id="photo-file" accept="image/jpeg,image/png,image/webp,image/gif" required onchange="updateFilePickerText()">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label for="photo-caption">Billedtekst (valgfri)</label>
+                    <input type="text" id="photo-caption" maxlength="500">
+                </div>
+                <p class="form-error" id="photo-upload-error" aria-live="polite"></p>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="photo-upload-btn">Del billede</button>
+                    <button type="button" class="btn-secondary" onclick="closeUploadDialog()">Luk</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
 </div>
 
 <script>
@@ -904,18 +967,10 @@
         }
     }
 
-    function celebrate() {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-        const page = document.querySelector('.page');
-        page.classList.remove('shake');
-        void page.offsetWidth;
-        page.classList.add('shake');
-        setTimeout(() => page.classList.remove('shake'), 500);
-
+    function spawnConfetti(count) {
         const layer = document.getElementById('confetti-layer');
         const colors = ['var(--confetti-blue)', 'var(--confetti-yellow)'];
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < count; i++) {
             const piece = document.createElement('div');
             piece.className = 'confetti-piece';
             piece.style.left = (Math.random() * 100) + '%';
@@ -927,6 +982,26 @@
             layer.appendChild(piece);
         }
         setTimeout(() => { layer.innerHTML = ''; }, 2200);
+    }
+
+    function celebrate() {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        const page = document.querySelector('.page');
+        page.classList.remove('shake');
+        void page.offsetWidth;
+        page.classList.add('shake');
+        setTimeout(() => page.classList.remove('shake'), 500);
+
+        spawnConfetti(40);
+    }
+
+    // Lighter burst for a frequent, incremental win (one photo shared) --
+    // no screen shake, fewer pieces. celebrate() stays for the "whole list
+    // done" milestone.
+    function celebratePhotoUpload() {
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        spawnConfetti(24);
     }
 
     function resetCheckboxes(containerId) {
@@ -1018,7 +1093,7 @@
 
     function renderPhotoUploadVisibility() {
         const canUpload = me.role === 'owner' || me.role === 'member';
-        document.getElementById('photo-upload-form').hidden = !canUpload;
+        document.getElementById('add-photo-btn').hidden = !canUpload;
         document.getElementById('upload-hint').hidden = canUpload;
     }
 
@@ -1319,6 +1394,30 @@
     }
 
     // ---------- photos ----------
+    function updateFilePickerText() {
+        const file = document.getElementById('photo-file').files[0];
+        const picker = document.getElementById('file-picker');
+        const text = document.getElementById('file-picker-text');
+        if (file) {
+            text.textContent = file.name;
+            picker.classList.add('has-file');
+        } else {
+            text.textContent = 'Vælg et billede...';
+            picker.classList.remove('has-file');
+        }
+    }
+
+    function openUploadDialog() {
+        document.getElementById('photo-upload-error').textContent = '';
+        document.getElementById('photo-file').value = '';
+        document.getElementById('photo-caption').value = '';
+        updateFilePickerText();
+        document.getElementById('upload-dialog').showModal();
+    }
+    function closeUploadDialog() {
+        document.getElementById('upload-dialog').close();
+    }
+
     async function loadPhotos() {
         const status = document.getElementById('photo-status');
         const grid = document.getElementById('photo-grid');
@@ -1439,6 +1538,9 @@
 
             fileInput.value = '';
             captionInput.value = '';
+            updateFilePickerText();
+            closeUploadDialog();
+            celebratePhotoUpload();
             await loadPhotos();
         } finally {
             submitBtn.disabled = false;
