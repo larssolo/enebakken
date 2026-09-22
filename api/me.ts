@@ -9,7 +9,7 @@ export default {
       const caller = await authenticate(request);
       if (!caller) return json({ authenticated: false });
       const role = await callerRole(caller.userId);
-      return json({ authenticated: true, email: caller.email, role });
+      return json({ authenticated: true, email: caller.email, name: caller.name, role });
     } catch (e) {
       console.error(e);
       return err(500, "Der gik noget galt");

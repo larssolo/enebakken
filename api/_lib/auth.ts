@@ -26,6 +26,7 @@ async function getJwks(): Promise<{ keys: any[] }> {
 export interface Caller {
   userId: string;
   email: string;
+  name: string | null;
 }
 
 export async function verifyToken(token: string): Promise<Caller | null> {
@@ -72,7 +73,7 @@ export async function verifyToken(token: string): Promise<Caller | null> {
   if (payload.aud !== ISSUER) return null;
   if (typeof payload.sub !== "string" || typeof payload.email !== "string") return null;
 
-  return { userId: payload.sub, email: payload.email };
+  return { userId: payload.sub, email: payload.email, name: typeof payload.name === "string" ? payload.name : null };
 }
 
 export async function authenticate(request: Request): Promise<Caller | null> {
