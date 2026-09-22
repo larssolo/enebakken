@@ -583,6 +583,7 @@
         }
         .btn-secondary:hover { border-color: var(--gold); color: var(--ink); }
 
+        .invite-mailto-btn { display: block; width: 100%; margin-bottom: 14px; }
         .invite-link-row { display: flex; gap: 8px; }
         .invite-link-row input {
             flex: 1;
@@ -700,6 +701,25 @@
             max-height: 2.4em;
             overflow: hidden;
         }
+        .delete-photo-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 50%;
+            background: rgba(20, 10, 5, 0.6);
+            color: #FBF5E9;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.15s ease;
+        }
+        .delete-photo-btn:hover { background: var(--error); }
+        .delete-photo-btn:active { transform: scale(0.9); }
         @media (max-width: 400px) {
             .photo-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
         }
@@ -859,7 +879,9 @@
                 </div>
             </form>
             <div id="invite-result" hidden>
-                <p class="form-hint">Del dette link med personen:</p>
+                <p class="form-hint">Invitationen er klar.</p>
+                <button type="button" class="btn-primary invite-mailto-btn" id="invite-mailto-btn" onclick="sendInviteMail()">Send invitation via mail</button>
+                <p class="form-hint">...eller kopiér linket:</p>
                 <div class="invite-link-row">
                     <input type="text" id="invite-link" readonly>
                     <button type="button" class="btn-secondary" onclick="copyInviteLink()">Kopiér</button>
@@ -983,7 +1005,7 @@
     }
 
     // ---------- auth state ----------
-    let me = { authenticated: false, email: null, name: null, role: null };
+    let me = { authenticated: false, userId: null, email: null, name: null, role: null };
     let pendingInviteToken = null;
 
     function firstName() {
@@ -999,10 +1021,10 @@
     async function refreshMe() {
         const token = await fetchFreshToken();
         if (!token) {
-            me = { authenticated: false, email: null, name: null, role: null };
+            me = { authenticated: false, userId: null, email: null, name: null, role: null };
         } else {
             const r = await apiFetch('/me', { headers: { Authorization: 'Bearer ' + token } });
-            me = r.ok ? r.body : { authenticated: false, email: null, name: null, role: null };
+            me = r.ok ? r.body : { authenticated: false, userId: null, email: null, name: null, role: null };
         }
         renderAccountBar();
         renderEditButtons();
@@ -1131,11 +1153,14 @@
     }
 
     // ---------- invites ----------
+    let pendingInviteMailto = null;
+
     function openInviteDialog() {
         document.getElementById('invite-form').hidden = false;
         document.getElementById('invite-result').hidden = true;
         document.getElementById('invite-email').value = '';
         document.getElementById('invite-error').textContent = '';
+        pendingInviteMailto = null;
         document.getElementById('invite-dialog').showModal();
     }
     function closeInviteDialog() {
@@ -1160,6 +1185,13 @@
             errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke oprette invitation';
             return false;
         }
+
+        const subject = 'Du er inviteret til Enebakken';
+        const body = 'Hej!\n\nDu er inviteret til Enebakkens side, hvor vi deler tjeklister og billeder fra huset.\n\n'
+            + 'Tryk på linket for at oprette en bruger og komme i gang:\n' + r.body.link + '\n\nVi ses!';
+        pendingInviteMailto = 'mailto:' + encodeURIComponent(r.body.email)
+            + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
         document.getElementById('invite-form').hidden = true;
         document.getElementById('invite-result').hidden = false;
         document.getElementById('invite-link').value = r.body.link;
@@ -1170,6 +1202,10 @@
         const input = document.getElementById('invite-link');
         input.select();
         if (navigator.clipboard) navigator.clipboard.writeText(input.value).catch(function () {});
+    }
+
+    function sendInviteMail() {
+        if (pendingInviteMailto) location.href = pendingInviteMailto;
     }
 
     async function tryRedeemPendingInvite() {
@@ -1405,6 +1441,16 @@
             img.loading = 'lazy';
             card.appendChild(img);
 
+            if (me.role === 'owner' || me.userId === photo.uploaded_by) {
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.className = 'delete-photo-btn';
+                delBtn.setAttribute('aria-label', 'Slet billede');
+                delBtn.appendChild(createTrashIcon());
+                delBtn.onclick = function () { deletePhoto(photo.id); };
+                card.appendChild(delBtn);
+            }
+
             if (photo.caption) {
                 const caption = document.createElement('div');
                 caption.className = 'photo-caption';
@@ -1413,6 +1459,37 @@
             }
             grid.appendChild(card);
         });
+    }
+
+    function createTrashIcon() {
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('width', '15');
+        svg.setAttribute('height', '15');
+        svg.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', 'M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-width', '1.8');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(path);
+        return svg;
+    }
+
+    async function deletePhoto(id) {
+        if (!confirm('Slet dette billede?')) return;
+        const token = await fetchFreshToken();
+        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        const r = await apiFetch('/photos', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ id: id }),
+        });
+        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke slette billedet'); return; }
+        await loadPhotos();
     }
 
     // Downscales JPEG/PNG/WEBP to 1000px on the longest edge before upload

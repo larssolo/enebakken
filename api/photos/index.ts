@@ -1,6 +1,6 @@
 import { requireMember } from "../_lib/auth.js";
-import { sql } from "../_lib/db.js";
-import { presignGet, objectExists } from "../_lib/storage.js";
+import { sql, callerRole } from "../_lib/db.js";
+import { presignGet, objectExists, deleteObject } from "../_lib/storage.js";
 import { json, err, isResponse } from "../_lib/http.js";
 
 export default {
@@ -48,6 +48,33 @@ export default {
         if (rows.length === 0) return err(409, "Billedet er allerede registreret");
 
         return json({ ok: true, id: rows[0].id });
+      }
+
+      // DELETE /api/photos — the uploader, or the owner, can remove a
+      // photo. Body: { id }. Deletes the DB row first: if the storage
+      // delete below then fails, the object is just an invisible orphan
+      // rather than a row pointing at a 404'ing image for everyone.
+      if (request.method === "DELETE") {
+        const caller = await requireMember(request);
+        if (isResponse(caller)) return caller;
+
+        const body: any = await request.json().catch(() => null);
+        const id = typeof body?.id === "number" || typeof body?.id === "string" ? String(body.id) : "";
+        if (!id) return err(400, "Mangler id");
+
+        const rows = await sql`select object_key, uploaded_by from photos where id = ${id}`;
+        const photo = rows[0];
+        if (!photo) return err(404, "Billedet findes ikke");
+
+        const role = await callerRole(caller.userId);
+        if (photo.uploaded_by !== caller.userId && role !== "owner") {
+          return err(403, "Du kan kun slette dine egne billeder");
+        }
+
+        await sql`delete from photos where id = ${id}`;
+        await deleteObject(photo.object_key as string).catch((e) => console.error("storage delete failed", e));
+
+        return json({ ok: true });
       }
 
       return err(405, "Metode ikke understøttet");
