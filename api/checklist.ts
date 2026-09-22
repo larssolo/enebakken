@@ -1,16 +1,8 @@
-import { authenticate, type Caller } from "./_lib/auth.js";
-import { sql, callerRole } from "./_lib/db.js";
+import { requireOwner } from "./_lib/auth.js";
+import { sql } from "./_lib/db.js";
 import { json, err, isResponse } from "./_lib/http.js";
 
 const VALID_LISTS = new Set(["luk", "aaben"]);
-
-async function requireOwner(request: Request): Promise<Caller | Response> {
-  const caller = await authenticate(request);
-  if (!caller) return err(401, "Log ind for at fortsætte");
-  const role = await callerRole(caller.userId);
-  if (role !== "owner") return err(403, "Kun ejeren kan gøre dette");
-  return caller;
-}
 
 export default {
   async fetch(request: Request): Promise<Response> {
