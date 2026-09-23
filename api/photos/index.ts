@@ -1,4 +1,4 @@
-import { authenticate, requireUploader } from "../_lib/auth.js";
+import { authenticate, requireActiveUser } from "../_lib/auth.js";
 import { sql, callerRole } from "../_lib/db.js";
 import { presignGet, headObject, getObjectBytes, putObject, deleteObject, MAX_UPLOAD_BYTES } from "../_lib/storage.js";
 import { normalizeImage, NotAnImageError } from "../_lib/image.js";
@@ -45,7 +45,7 @@ export default {
       // normalized (see _lib/image.ts) and overwritten before it's recorded,
       // so what the gallery serves never depends on what the browser did.
       if (request.method === "POST") {
-        const caller = await requireUploader(request);
+        const caller = await requireActiveUser(request);
         if (isResponse(caller)) return caller;
 
         const body: any = await request.json().catch(() => null);

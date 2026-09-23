@@ -2,8 +2,9 @@ import { AUTH_BASE, readSessionCookie, upstreamHeaders } from "../_lib/authProxy
 import { json, err } from "../_lib/http.js";
 
 // GET /api/auth/token — mints a fresh short-lived JWT for the current
-// session cookie. The frontend calls this right before any authenticated
-// API request rather than caching a token, so expiry is a non-issue.
+// session cookie. The frontend calls this right before most authenticated
+// requests; only the checklist sync, which polls, keeps one in memory until
+// a minute before it expires.
 export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method !== "GET") return err(405, "Metode ikke understøttet");

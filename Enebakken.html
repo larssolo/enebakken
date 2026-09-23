@@ -339,12 +339,20 @@
         }
         .task-item input[type="checkbox"]:checked::after { transform: scale(1); }
 
+        .task-text { flex: 1; min-width: 0; }
         .task-item label {
+            display: block;
             position: relative;
             font-size: 1.03rem;
             cursor: pointer;
-            flex: 1;
             transition: color 0.3s ease;
+        }
+        /* who ticked it, and when (shared lists only) */
+        .tick-by {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.76rem;
+            color: var(--ink-soft);
         }
 
         .task-item label::after {
@@ -515,7 +523,24 @@
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .edit-actions .btn-primary, .edit-actions .btn-secondary { flex: 1; padding: 10px 12px; font-size: 0.9rem; }
 
-        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden], .auth-switch[hidden], .photo-more-btn[hidden] { display: none; }
+        .share-hint {
+            text-align: center;
+            color: var(--ink-soft);
+            font-size: 0.87rem;
+            margin-top: 14px;
+        }
+        .inline-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            color: inherit;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            cursor: pointer;
+        }
+
+        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden], .auth-switch[hidden], .photo-more-btn[hidden], .tick-by[hidden] { display: none; }
 
         @media (prefers-reduced-motion: no-preference) {
             .tab-content.active .task-item-edit { animation: itemIn 0.3s ease both; }
@@ -823,7 +848,7 @@
             text-align: center;
             color: var(--ink-soft);
             font-size: 0.87rem;
-            margin-bottom: 18px;
+            margin-top: 18px;
         }
         .photo-more-btn { display: block; width: 100%; margin-top: 18px; }
         .photo-more-btn:disabled { opacity: 0.6; cursor: default; }
@@ -926,6 +951,7 @@
                     <button type="button" class="btn-secondary" onclick="cancelEdit('luk')">Annullér</button>
                 </div>
             </div>
+            <p class="share-hint" hidden><button type="button" class="inline-link" onclick="openAuthDialog()">Log ind</button> for at se og dele fluebenene med de andre i huset.</p>
         </div>
 
         <!-- ÅBN OP SECTION -->
@@ -944,6 +970,7 @@
                     <button type="button" class="btn-secondary" onclick="cancelEdit('aaben')">Annullér</button>
                 </div>
             </div>
+            <p class="share-hint" hidden><button type="button" class="inline-link" onclick="openAuthDialog()">Log ind</button> for at se og dele fluebenene med de andre i huset.</p>
         </div>
 
         <div id="billeder" class="tab-content" role="tabpanel">
@@ -951,11 +978,10 @@
                 <h2 class="section-title" id="billeder-title">Opslagstavlen</h2>
                 <button type="button" class="add-photo-btn" id="add-photo-btn" onclick="openUploadDialog()" hidden aria-label="Del et billede">+</button>
             </div>
-            <p class="upload-hint" id="upload-hint" hidden>Log ind for at dele billeder.</p>
-
             <p class="photo-status" id="photo-status">Henter billeder...</p>
             <div class="photo-grid" id="photo-grid"></div>
             <button type="button" class="btn-secondary photo-more-btn" id="photo-more-btn" hidden onclick="showMorePhotos()">Vis flere billeder</button>
+            <p class="upload-hint" id="upload-hint" hidden>Log ind for at dele billeder.</p>
         </div>
 
         <svg class="kurbits-divider" viewBox="0 0 200 20" preserveAspectRatio="none" aria-hidden="true">
@@ -1156,6 +1182,10 @@
         btn.setAttribute('aria-selected', 'true');
         const activeClass = tabId === 'luk' ? 'active-close' : tabId === 'aaben' ? 'active-open' : 'active-photos';
         btn.classList.add(activeClass);
+
+        // The lists aren't polled while the photos are showing; catch up at once.
+        if (tabId === 'billeder') scheduleTickPoll();
+        else syncTicks();
     }
 
     function toggleTask(event, element) {
@@ -1163,11 +1193,16 @@
         if (event.target !== checkbox) {
             checkbox.checked = !checkbox.checked;
         }
-        element.classList.toggle('completed', checkbox.checked);
-
         const container = element.closest('.tab-content');
-        if (container) saveChecks(container.id);
-        if (checkbox.checked && container) {
+        if (!container) return;
+
+        const listId = container.id;
+        tickStores[listId].pending[element.dataset.label] = { checked: checkbox.checked, t: Date.now() };
+        saveTickStore(listId);
+        applyTicks(listId);
+        queueTickSync();
+
+        if (checkbox.checked) {
             const boxes = container.querySelectorAll('input[type="checkbox"]');
             const allChecked = Array.from(boxes).every(box => box.checked);
             if (allChecked) celebrate();
@@ -1211,38 +1246,20 @@
         spawnConfetti(24);
     }
 
-    function resetCheckboxes(containerId) {
-        const container = document.getElementById(containerId);
-        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-            cb.checked = false;
-            cb.closest('.task-item').classList.remove('completed');
-        });
-        saveChecks(containerId);
-    }
+    // Signed in, "Nulstil" clears the list on every phone, so it asks first.
+    // With nothing ticked there is nothing to clear, and nothing is sent.
+    function resetCheckboxes(listId) {
+        if (!document.querySelector('#' + listId + '-list input[type="checkbox"]:checked')) return;
+        const mode = ticksMode();
+        const shared = mode === 'shared' || (mode === 'unknown' && tickStores[listId].owner !== null);
+        if (shared && !confirm('Nulstil listen for alle? Fluebenene forsvinder også på de andres telefoner.')) return;
 
-    // Ticks untouched for this long are from a previous visit, not an
-    // accidental reload, and must not resurface on the next one.
-    const CHECKS_TTL_MS = 24 * 60 * 60 * 1000;
-
-    function loadChecks(listId) {
-        try {
-            const saved = JSON.parse(localStorage.getItem('enebakken:checked:' + listId));
-            if (saved && Array.isArray(saved.labels) && Date.now() - saved.at < CHECKS_TTL_MS) {
-                return new Set(saved.labels);
-            }
-        } catch (e) {}
-        return new Set();
-    }
-
-    function saveChecks(listId) {
-        const labels = [];
-        document.querySelectorAll('#' + listId + '-list .task-item').forEach(function (li) {
-            if (li.querySelector('input[type="checkbox"]').checked) labels.push(li.dataset.label);
-        });
-        try {
-            if (labels.length === 0) localStorage.removeItem('enebakken:checked:' + listId);
-            else localStorage.setItem('enebakken:checked:' + listId, JSON.stringify({ at: Date.now(), labels: labels }));
-        } catch (e) {}
+        const store = emptyTickStore(tickStores[listId].owner);
+        if (shared) store.reset = Date.now();
+        tickStores[listId] = store;
+        saveTickStore(listId);
+        applyTicks(listId);
+        queueTickSync(true);
     }
 
     // ==================== backend wiring ====================
@@ -1276,11 +1293,44 @@
     }
 
     let lastTokenOffline = false;
+    // Set once we know for sure whether someone is signed in; offline at
+    // start, we don't.
+    let authResolved = false;
 
-    async function fetchFreshToken() {
-        const r = await apiFetch('/auth/token');
+    async function fetchFreshToken(signal) {
+        const r = await apiFetch('/auth/token', signal ? { signal: signal } : undefined);
         lastTokenOffline = r.status === 0;
-        return r.ok ? r.body.token : null;
+        if (r.ok && r.body && r.body.token) {
+            rememberToken(r.body.token);
+            return r.body.token;
+        }
+        if (!lastTokenOffline) cachedToken = null;
+        return null;
+    }
+
+    // The checklist sync asks every few seconds, so it reuses a token until
+    // shortly before it expires (they live 15 minutes) instead of fetching a
+    // new one each time. Kept in memory only.
+    let cachedToken = null;
+    let cachedTokenExpiry = 0;
+
+    function rememberToken(token) {
+        cachedToken = token;
+        cachedTokenExpiry = jwtExpiry(token) || Date.now() + 5 * 60 * 1000;
+    }
+
+    function jwtExpiry(token) {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+            return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    async function getSyncToken(signal) {
+        if (cachedToken && Date.now() < cachedTokenExpiry - 60 * 1000) return cachedToken;
+        return fetchFreshToken(signal);
     }
 
     function noTokenText() {
@@ -1293,15 +1343,16 @@
         const signedOut = { authenticated: false, userId: null, email: null, name: null, role: null };
         const token = await fetchFreshToken();
         if (!token) {
-            if (!lastTokenOffline) me = signedOut;
+            if (!lastTokenOffline) { me = signedOut; authResolved = true; }
         } else {
             const r = await apiFetch('/me', { headers: { Authorization: 'Bearer ' + token } });
-            if (r.ok) me = r.body;
-            else if (r.status !== 0) me = signedOut;
+            if (r.ok) { me = r.body; authResolved = true; }
+            else if (r.status !== 0) { me = signedOut; authResolved = true; }
         }
         renderAccountBar();
         renderEditButtons();
         renderPhotoUploadVisibility();
+        onTicksModeChange();
     }
 
     function renderAccountBar() {
@@ -1522,6 +1573,7 @@
 
     async function handleSignOut() {
         await apiFetch('/auth/sign-out', { method: 'POST' });
+        cachedToken = null;
         await refreshMe();
     }
 
@@ -1743,7 +1795,8 @@
 
     async function loadChecklist() {
         const r = await apiFetch('/checklist');
-        document.getElementById('offline-banner').hidden = !r.fromCache;
+        checklistFromCache = r.fromCache;
+        renderOfflineBanner();
         if (!r.ok) {
             const text = r.status === 0 ? 'Ingen forbindelse — tjeklisten kan ikke hentes.' : 'Kunne ikke hente tjeklisten.';
             document.getElementById('luk-status').textContent = text;
@@ -1776,7 +1829,6 @@
         }
         status.hidden = true;
 
-        const checked = loadChecks(listId);
         items.forEach(function (item, i) {
             const li = document.createElement('li');
             li.className = 'task-item';
@@ -1787,18 +1839,24 @@
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.setAttribute('aria-label', item.label);
-            if (checked.has(item.label)) {
-                checkbox.checked = true;
-                li.classList.add('completed');
-            }
 
+            const text = document.createElement('div');
+            text.className = 'task-text';
             const label = document.createElement('label');
             label.textContent = item.label;
+            const by = document.createElement('span');
+            by.className = 'tick-by';
+            by.id = listId + '-by-' + i;
+            by.hidden = true;
+            checkbox.setAttribute('aria-describedby', by.id);
+            text.appendChild(label);
+            text.appendChild(by);
 
             li.appendChild(checkbox);
-            li.appendChild(label);
+            li.appendChild(text);
             ul.appendChild(li);
         });
+        applyTicks(listId);
     }
 
     function renderEditRows(listId) {
@@ -1881,6 +1939,370 @@
 
         exitEditChrome(listId);
         await loadChecklist();
+    }
+
+    // ---------- shared ticks ----------
+    // Signed in, the ticks on both lists are shared: each tap is sent to
+    // /api/ticks, and the lists are polled so taps on other phones show up
+    // within seconds. Signed out, ticks stay on this phone, as before.
+    //
+    // Per list, this phone keeps the last state the server sent (server),
+    // taps the server hasn't confirmed yet (pending) and a "Nulstil" it
+    // hasn't confirmed yet (reset). The page shows pending on top of server,
+    // so a tap shows at once and survives a reload, a slow answer and an
+    // offline spell. Times are this phone's clock; the server is sent ages,
+    // not times, so a phone whose clock is off still orders its taps right.
+    const TICK_LISTS = ['luk', 'aaben'];
+    const TICKS_KEY = 'enebakken:ticks:';
+    const VISIT_MS = 24 * 60 * 60 * 1000;         // untouched this long: a finished visit
+    const TICK_POLL_MS = 4000;
+    const TICK_POLL_IDLE_MS = 30 * 1000;
+    const TICK_IDLE_AFTER_MS = 10 * 60 * 1000;    // nobody has touched the page: poll slowly...
+    const TICK_PAUSE_AFTER_MS = 30 * 60 * 1000;   // ...then not at all, until someone does
+    const TICK_REQUEST_TIMEOUT_MS = 10 * 1000;
+    const TICK_BATCH_MAX = 200;
+    const tickTimeFormat = new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' });
+
+    let tickStores = { luk: emptyTickStore(null), aaben: emptyTickStore(null) };
+    let checklistFromCache = false;
+    let tickOfflineCount = 0;
+    let tickPollTimer = null;
+    let tickQueueTimer = null;
+    let tickSyncBusy = false;
+    let tickSyncAgain = false;
+    let lastTickActivity = Date.now();
+    let lastAuthRecheck = 0;
+
+    function emptyTickStore(owner) {
+        return { owner: owner, server: Object.create(null), pending: Object.create(null), reset: null };
+    }
+
+    // 'shared': signed in and not blocked. 'local': signed out (or blocked),
+    // ticks stay on this phone. 'unknown': offline since the page opened, so
+    // we can't tell yet; the saved state is shown as it was left.
+    function ticksMode() {
+        if (me.authenticated) return me.role === 'blocked' ? 'local' : 'shared';
+        return authResolved ? 'local' : 'unknown';
+    }
+
+    function loadTickStore(listId) {
+        const store = emptyTickStore(null);
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(TICKS_KEY + listId)); } catch (e) {}
+        if (!saved || typeof saved !== 'object') return store;
+        if (typeof saved.owner === 'string') store.owner = saved.owner;
+        if (typeof saved.reset === 'number') store.reset = saved.reset;
+        const server = saved.server && typeof saved.server === 'object' ? saved.server : {};
+        Object.keys(server).forEach(function (label) {
+            const v = server[label];
+            if (v && typeof v.at === 'number') store.server[label] = { by: typeof v.by === 'string' ? v.by : null, mine: v.mine === true, at: v.at };
+        });
+        const pending = saved.pending && typeof saved.pending === 'object' ? saved.pending : {};
+        Object.keys(pending).forEach(function (label) {
+            const v = pending[label];
+            if (v && typeof v.checked === 'boolean' && typeof v.t === 'number') store.pending[label] = { checked: v.checked, t: v.t };
+        });
+        return store;
+    }
+
+    function saveTickStore(listId) {
+        try { localStorage.setItem(TICKS_KEY + listId, JSON.stringify(tickStores[listId])); } catch (e) {}
+    }
+
+    // Ticks saved by the previous version (this phone only) carry over as
+    // this phone's own; signed in, the first sync shares them.
+    function migrateOldTicks(listId) {
+        const key = 'enebakken:checked:' + listId;
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw === null) return;
+            localStorage.removeItem(key);
+            const old = JSON.parse(raw);
+            if (!old || !Array.isArray(old.labels) || typeof old.at !== 'number' || Date.now() - old.at > VISIT_MS) return;
+            const store = tickStores[listId];
+            old.labels.forEach(function (label) {
+                if (typeof label === 'string' && !store.pending[label]) store.pending[label] = { checked: true, t: old.at };
+            });
+            saveTickStore(listId);
+        } catch (e) {}
+    }
+
+    // A list nobody has touched for a day is a finished visit: start clean.
+    function expireTickStore(listId) {
+        const store = tickStores[listId];
+        let last = store.reset || 0;
+        Object.keys(store.pending).forEach(function (l) { last = Math.max(last, store.pending[l].t); });
+        Object.keys(store.server).forEach(function (l) { last = Math.max(last, store.server[l].at); });
+        if (last && Date.now() - last > VISIT_MS) {
+            tickStores[listId] = emptyTickStore(store.owner);
+            saveTickStore(listId);
+        }
+    }
+
+    function tickState(listId, label) {
+        const store = tickStores[listId];
+        const mine = store.pending[label];
+        if (mine) return mine.checked ? { mine: true, by: null, at: mine.t } : null;
+        return store.server[label] || null;
+    }
+
+    // Updates the existing rows in place: no re-render, no replayed animation.
+    function applyTicks(listId) {
+        if (editing[listId]) return;
+        expireTickStore(listId);
+        const showWho = ticksMode() !== 'local';
+        document.querySelectorAll('#' + listId + '-list .task-item').forEach(function (li) {
+            const tick = tickState(listId, li.dataset.label);
+            li.querySelector('input[type="checkbox"]').checked = !!tick;
+            li.classList.toggle('completed', !!tick);
+            const by = li.querySelector('.tick-by');
+            const text = tick && showWho ? tickByText(tick) : '';
+            if (by.textContent !== text) by.textContent = text;
+            by.hidden = !text;
+        });
+    }
+
+    function tickByText(tick) {
+        return (tick.mine ? 'Dig' : (tick.by || 'En anden')) + ' · ' + formatTickTime(tick.at);
+    }
+
+    function formatTickTime(at) {
+        const d = new Date(Math.min(at, Date.now()));
+        const now = new Date();
+        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        const time = tickTimeFormat.format(d);
+        if (d.toDateString() === now.toDateString()) return time;
+        if (d.toDateString() === yesterday.toDateString()) return 'i går ' + time;
+        return d.getDate() + '/' + (d.getMonth() + 1) + ' ' + time;
+    }
+
+    // Called whenever who is signed in may have changed.
+    function onTicksModeChange() {
+        const mode = ticksMode();
+        if (mode !== 'unknown') {
+            const owner = mode === 'shared' ? me.userId : null;
+            TICK_LISTS.forEach(function (listId) {
+                const store = tickStores[listId];
+                if (store.owner === owner && (owner !== null || (Object.keys(store.server).length === 0 && !store.reset))) return;
+                if (store.owner === null && owner !== null) {
+                    store.owner = owner;   // ticked before signing in: share them now
+                } else if (store.owner === owner) {
+                    store.server = Object.create(null);   // signed out: nothing shared stays behind
+                    store.reset = null;
+                } else {
+                    tickStores[listId] = emptyTickStore(owner);   // signed out, or someone else signed in
+                }
+                saveTickStore(listId);
+            });
+        }
+        TICK_LISTS.forEach(applyTicks);
+        document.querySelectorAll('.share-hint').forEach(function (el) {
+            el.hidden = !(mode === 'local' && !me.authenticated);
+        });
+        renderOfflineBanner();
+        if (mode === 'shared') {
+            syncTicks();
+        } else {
+            clearTimeout(tickPollTimer);
+            tickPollTimer = null;
+        }
+    }
+
+    function hasUnsentTicks() {
+        return TICK_LISTS.some(function (listId) {
+            const store = tickStores[listId];
+            return store.reset !== null || Object.keys(store.pending).length > 0;
+        });
+    }
+
+    function renderOfflineBanner() {
+        const mode = ticksMode();
+        const ticksOffline = mode !== 'local' && (tickOfflineCount >= 2 || !navigator.onLine);
+        const willShare = ticksOffline && hasUnsentTicks() && TICK_LISTS.some(function (l) { return tickStores[l].owner !== null; });
+        const banner = document.getElementById('offline-banner');
+        banner.textContent = willShare
+            ? 'Ingen forbindelse — dine flueben deles, når du er online igen.'
+            : 'Ingen forbindelse — du ser den senest hentede huskeseddel.';
+        banner.hidden = !(checklistFromCache || ticksOffline);
+    }
+
+    // Offline since the start, or the server said 401/403: ask again who
+    // this is, at most every 15 seconds.
+    function recheckAuthSoon() {
+        if (Date.now() - lastAuthRecheck < 15 * 1000) return;
+        lastAuthRecheck = Date.now();
+        refreshMe();
+    }
+
+    // After a tap: send it shortly, so a few quick taps go as one request.
+    function queueTickSync(immediately) {
+        renderOfflineBanner();
+        const mode = ticksMode();
+        if (mode === 'unknown') { recheckAuthSoon(); return; }
+        if (mode !== 'shared') return;
+        clearTimeout(tickQueueTimer);
+        tickQueueTimer = setTimeout(syncTicks, immediately ? 0 : 250);
+    }
+
+    // One request at a time, so answers can't arrive out of order; a sync
+    // asked for meanwhile runs right after.
+    async function syncTicks() {
+        clearTimeout(tickQueueTimer);
+        if (ticksMode() !== 'shared') return;
+        if (tickSyncBusy) { tickSyncAgain = true; return; }
+        tickSyncBusy = true;
+        try {
+            do {
+                tickSyncAgain = false;
+                await syncTicksOnce();
+            } while (tickSyncAgain && ticksMode() === 'shared');
+        } finally {
+            tickSyncBusy = false;
+            scheduleTickPoll();
+        }
+    }
+
+    async function syncTicksOnce() {
+        const controller = new AbortController();
+        const timer = setTimeout(function () { controller.abort(); }, TICK_REQUEST_TIMEOUT_MS);
+        try {
+            let token = await getSyncToken(controller.signal);
+            if (!token) {
+                if (lastTokenOffline) tickOfflineCount++;
+                else recheckAuthSoon();
+                return;
+            }
+            const out = collectTickBatch();
+            const send = function (tok) {
+                const headers = { Authorization: 'Bearer ' + tok };
+                if (!out.batch) return apiFetch('/ticks', { headers: headers, signal: controller.signal });
+                headers['Content-Type'] = 'application/json';
+                return apiFetch('/ticks', { method: 'POST', headers: headers, body: JSON.stringify(out.batch), signal: controller.signal });
+            };
+            let r = await send(token);
+            if (r.status === 401) {
+                // The saved token was rejected (a phone clock far off can do
+                // that): one more try with a fresh one.
+                cachedToken = null;
+                token = await fetchFreshToken(controller.signal);
+                if (token) r = await send(token);
+            }
+            if (!r.ok || !r.body || !Array.isArray(r.body.ticks)) {
+                if (r.status === 0) tickOfflineCount++;
+                if (r.status === 401 || r.status === 403) recheckAuthSoon();
+                return;
+            }
+            tickOfflineCount = 0;
+            applyServerTicks(r.body.ticks, Date.now(), out.sent);
+            if (out.more) tickSyncAgain = true;
+        } finally {
+            clearTimeout(timer);
+            renderOfflineBanner();
+        }
+    }
+
+    function collectTickBatch() {
+        const now = Date.now();
+        const resets = [];
+        const changes = [];
+        const sent = {};
+        let more = false;
+        TICK_LISTS.forEach(function (listId) {
+            const store = tickStores[listId];
+            sent[listId] = { reset: store.reset, pending: {} };
+            if (store.reset !== null) resets.push({ list: listId, ageMs: Math.max(0, now - store.reset) });
+            Object.keys(store.pending).forEach(function (label) {
+                const tap = store.pending[label];
+                if (now - tap.t > VISIT_MS) { delete store.pending[label]; return; }   // from a previous visit
+                if (changes.length >= TICK_BATCH_MAX) { more = true; return; }
+                changes.push({ list: listId, label: label, checked: tap.checked, ageMs: Math.max(0, now - tap.t) });
+                sent[listId].pending[label] = tap.t;
+            });
+        });
+        if (resets.length === 0 && changes.length === 0) return { batch: null, sent: null, more: false };
+        return { batch: { resets: resets, changes: changes }, sent: sent, more: more };
+    }
+
+    function applyServerTicks(ticks, receivedAt, sent) {
+        const fresh = { luk: Object.create(null), aaben: Object.create(null) };
+        ticks.forEach(function (t) {
+            if (!t || !fresh[t.list] || typeof t.label !== 'string') return;
+            fresh[t.list][t.label] = { by: typeof t.by === 'string' ? t.by : null, mine: t.mine === true, at: receivedAt - (Number(t.ageMs) || 0) };
+        });
+        TICK_LISTS.forEach(function (listId) {
+            const store = tickStores[listId];
+            if (sent) {
+                // Confirmed, so no longer pending, unless tapped again meanwhile.
+                const out = sent[listId];
+                if (out.reset !== null && store.reset === out.reset) store.reset = null;
+                Object.keys(out.pending).forEach(function (label) {
+                    if (store.pending[label] && store.pending[label].t === out.pending[label]) delete store.pending[label];
+                });
+            }
+            const server = fresh[listId];
+            if (store.reset !== null) {
+                // A reset the server hasn't had yet hides what came before it.
+                Object.keys(server).forEach(function (label) {
+                    if (server[label].at <= store.reset) delete server[label];
+                });
+            }
+            store.server = server;
+            saveTickStore(listId);
+            applyTicks(listId);
+        });
+    }
+
+    // Poll while someone is looking at a list; slower after 10 quiet
+    // minutes, and not at all after 30, so a forgotten open tab doesn't keep
+    // the database awake. Any touch, scroll or key brings it back at once.
+    function scheduleTickPoll() {
+        clearTimeout(tickPollTimer);
+        tickPollTimer = null;
+        if (ticksMode() !== 'shared' || document.hidden) return;
+        if (document.getElementById('billeder').classList.contains('active')) return;
+        const quiet = Date.now() - lastTickActivity;
+        if (quiet > TICK_PAUSE_AFTER_MS) return;
+        tickPollTimer = setTimeout(syncTicks, quiet > TICK_IDLE_AFTER_MS ? TICK_POLL_IDLE_MS : TICK_POLL_MS);
+    }
+
+    function noteTickActivity() {
+        const wasQuiet = Date.now() - lastTickActivity > TICK_IDLE_AFTER_MS;
+        lastTickActivity = Date.now();
+        if (wasQuiet) syncTicks();
+    }
+
+    function initTicks() {
+        TICK_LISTS.forEach(function (listId) {
+            tickStores[listId] = loadTickStore(listId);
+            migrateOldTicks(listId);
+        });
+
+        ['pointerdown', 'keydown', 'scroll', 'wheel'].forEach(function (type) {
+            window.addEventListener(type, noteTickActivity, { passive: true, capture: true });
+        });
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                clearTimeout(tickPollTimer);
+                tickPollTimer = null;
+                if (hasUnsentTicks()) syncTicks();   // get the last taps out before the phone sleeps
+                return;
+            }
+            lastTickActivity = Date.now();
+            if (ticksMode() === 'unknown') recheckAuthSoon();
+            else syncTicks();
+        });
+
+        // Another tab on this phone changed the ticks.
+        window.addEventListener('storage', function (event) {
+            TICK_LISTS.forEach(function (listId) {
+                if (event.key !== null && event.key !== TICKS_KEY + listId) return;
+                tickStores[listId] = loadTickStore(listId);
+                applyTicks(listId);
+            });
+        });
+
+        window.addEventListener('offline', renderOfflineBanner);
     }
 
     // ---------- photos ----------
@@ -2251,6 +2673,7 @@
 
     // ---------- init ----------
     document.addEventListener('DOMContentLoaded', async function () {
+        initTicks();
         loadChecklist(); // public data: a slow sign-in check must not hold it up
         await refreshMe();
         checkForInviteParam();

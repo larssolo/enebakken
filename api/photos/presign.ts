@@ -1,4 +1,4 @@
-import { requireUploader } from "../_lib/auth.js";
+import { requireActiveUser } from "../_lib/auth.js";
 import { presignPut, MAX_UPLOAD_BYTES } from "../_lib/storage.js";
 import { json, err, isResponse } from "../_lib/http.js";
 import { randomUUID } from "node:crypto";
@@ -19,7 +19,7 @@ export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method !== "POST") return err(405, "Metode ikke understøttet");
     try {
-      const caller = await requireUploader(request);
+      const caller = await requireActiveUser(request);
       if (isResponse(caller)) return caller;
 
       const body: any = await request.json().catch(() => null);
