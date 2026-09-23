@@ -412,6 +412,7 @@
             margin: 10px auto 0;
             max-width: 420px;
         }
+        .offline-banner { margin: 0 auto 18px; }
 
         /* ---- third tab (photos) ---- */
         .tab-btn.active-photos {
@@ -497,7 +498,7 @@
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .edit-actions .btn-primary, .edit-actions .btn-secondary { flex: 1; padding: 10px 12px; font-size: 0.9rem; }
 
-        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden], .auth-switch[hidden] { display: none; }
+        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden], .auth-switch[hidden], .photo-more-btn[hidden] { display: none; }
 
         @media (prefers-reduced-motion: no-preference) {
             .tab-content.active .task-item-edit { animation: itemIn 0.3s ease both; }
@@ -805,6 +806,8 @@
             font-size: 0.87rem;
             margin-bottom: 18px;
         }
+        .photo-more-btn { display: block; width: 100%; margin-top: 18px; }
+        .photo-more-btn:disabled { opacity: 0.6; cursor: default; }
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -883,6 +886,8 @@
         </button>
     </nav>
 
+    <p class="page-banner offline-banner" id="offline-banner" role="status" hidden>Ingen forbindelse — du ser den senest hentede huskeseddel.</p>
+
     <div class="card">
         <div class="pin" aria-hidden="true"></div>
 
@@ -931,6 +936,7 @@
 
             <p class="photo-status" id="photo-status">Henter billeder...</p>
             <div class="photo-grid" id="photo-grid"></div>
+            <button type="button" class="btn-secondary photo-more-btn" id="photo-more-btn" hidden onclick="showMorePhotos()">Vis flere billeder</button>
         </div>
 
         <svg class="kurbits-divider" viewBox="0 0 200 20" preserveAspectRatio="none" aria-hidden="true">
@@ -1223,12 +1229,22 @@
     // ==================== backend wiring ====================
 
     const API = '/api';
+    const OFFLINE_TEXT = 'Ingen forbindelse — prøv igen, når du er online.';
 
+    // A network failure resolves to { ok: false, status: 0 } with a readable
+    // error instead of throwing, so every caller's existing !r.ok path also
+    // covers being offline. fromCache: the service worker answered from its
+    // cache because the network didn't.
     async function apiFetch(path, options) {
-        const res = await fetch(API + path, options || {});
+        let res;
+        try {
+            res = await fetch(API + path, options || {});
+        } catch (e) {
+            return { ok: false, status: 0, body: { error: OFFLINE_TEXT }, fromCache: false };
+        }
         let body = null;
         try { body = await res.json(); } catch (e) {}
-        return { ok: res.ok, status: res.status, body: body };
+        return { ok: res.ok, status: res.status, body: body, fromCache: res.headers.get('X-Eb-Offline') === '1' };
     }
 
     // ---------- auth state ----------
@@ -1240,18 +1256,29 @@
         return me.name.trim().split(/\s+/)[0];
     }
 
+    let lastTokenOffline = false;
+
     async function fetchFreshToken() {
         const r = await apiFetch('/auth/token');
+        lastTokenOffline = r.status === 0;
         return r.ok ? r.body.token : null;
     }
 
+    function noTokenText() {
+        return lastTokenOffline ? OFFLINE_TEXT : 'Din session er udløbet — log ind igen.';
+    }
+
+    // A failed request with no connection says nothing about the session,
+    // so it leaves `me` as it was rather than flipping the page to signed out.
     async function refreshMe() {
+        const signedOut = { authenticated: false, userId: null, email: null, name: null, role: null };
         const token = await fetchFreshToken();
         if (!token) {
-            me = { authenticated: false, userId: null, email: null, name: null, role: null };
+            if (!lastTokenOffline) me = signedOut;
         } else {
             const r = await apiFetch('/me', { headers: { Authorization: 'Bearer ' + token } });
-            me = r.ok ? r.body : { authenticated: false, userId: null, email: null, name: null, role: null };
+            if (r.ok) me = r.body;
+            else if (r.status !== 0) me = signedOut;
         }
         renderAccountBar();
         renderEditButtons();
@@ -1302,7 +1329,8 @@
     function renderPhotoUploadVisibility() {
         const canUpload = me.role === 'owner' || me.role === 'member';
         document.getElementById('add-photo-btn').hidden = !canUpload;
-        document.getElementById('upload-hint').hidden = canUpload;
+        // Offline we can't tell who this is, so don't claim they lack access.
+        document.getElementById('upload-hint').hidden = canUpload || lastTokenOffline;
     }
 
     function showPageBanner(text) {
@@ -1499,7 +1527,7 @@
         errorEl.textContent = '';
 
         const token = await fetchFreshToken();
-        if (!token) { errorEl.textContent = 'Din session er udløbet — log ind igen'; return false; }
+        if (!token) { errorEl.textContent = noTokenText(); return false; }
 
         const r = await apiFetch('/invites', {
             method: 'POST',
@@ -1585,7 +1613,7 @@
     async function removeMember(userId, name) {
         if (!confirm('Fjern adgang for ' + (name || 'denne bruger') + '?')) return;
         const token = await fetchFreshToken();
-        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        if (!token) { alert(noTokenText()); return; }
         const r = await apiFetch('/members', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -1621,7 +1649,7 @@
     async function cancelInvite(id) {
         if (!confirm('Annullér denne invitation?')) return;
         const token = await fetchFreshToken();
-        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        if (!token) { alert(noTokenText()); return; }
         const r = await apiFetch('/invites', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -1683,9 +1711,11 @@
 
     async function loadChecklist() {
         const r = await apiFetch('/checklist');
+        document.getElementById('offline-banner').hidden = !r.fromCache;
         if (!r.ok) {
-            document.getElementById('luk-status').textContent = 'Kunne ikke hente tjeklisten.';
-            document.getElementById('aaben-status').textContent = 'Kunne ikke hente tjeklisten.';
+            const text = r.status === 0 ? 'Ingen forbindelse — tjeklisten kan ikke hentes.' : 'Kunne ikke hente tjeklisten.';
+            document.getElementById('luk-status').textContent = text;
+            document.getElementById('aaben-status').textContent = text;
             return;
         }
         checklistData.luk = r.body.items.filter(function (i) { return i.list === 'luk'; }).sort(function (a, b) { return a.position - b.position; });
@@ -1808,7 +1838,7 @@
         if (labels.length === 0) { alert('Listen skal have mindst ét punkt.'); return; }
 
         const token = await fetchFreshToken();
-        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        if (!token) { alert(noTokenText()); return; }
 
         const r = await apiFetch('/checklist', {
             method: 'PUT',
@@ -1848,55 +1878,138 @@
 
     let currentPhotos = [];
     let lightboxIndex = -1;
+    let photoGen = 0;
+    let photosCursor = null;
+    let photosLoading = false;
+    let photosDone = false;
+    let photosFailed = false;
 
-    async function loadPhotos() {
+    // Full (re)load from the newest photo. Old cards stay on screen until the
+    // new first page arrives, so a reload after an upload doesn't flash empty.
+    function loadPhotos() {
+        photoGen++;
+        photosCursor = null;
+        photosDone = false;
+        photosLoading = false;
+        photosFailed = false;
+        return fetchPhotoPage(photoGen);
+    }
+
+    // Automatic triggers (scrolling, the lightbox nearing the end) stop after
+    // a failure; only a tap on the button or coming back online retries, so
+    // an offline phone doesn't fire a failing request on every scroll.
+    function loadMorePhotos() {
+        if (photosLoading || photosDone || photosFailed) return;
+        fetchPhotoPage(photoGen);
+    }
+
+    function showMorePhotos() {
+        photosFailed = false;
+        loadMorePhotos();
+    }
+
+    // A page still in flight when loadPhotos() starts over belongs to an
+    // older generation and is dropped, never appended to the new list.
+    async function fetchPhotoPage(gen) {
+        const firstPage = photosCursor === null;
+        photosLoading = true;
+        updateMoreButton();
+        const r = await apiFetch('/photos' + (firstPage ? '' : '?before=' + encodeURIComponent(photosCursor)));
+        if (gen !== photoGen) return;
+        photosLoading = false;
+
         const status = document.getElementById('photo-status');
-        const grid = document.getElementById('photo-grid');
-
-        const r = await apiFetch('/photos');
+        photosFailed = !r.ok;
         if (!r.ok) {
-            status.hidden = false;
-            status.textContent = 'Kunne ikke hente billeder.';
+            if (firstPage && currentPhotos.length === 0) {
+                status.hidden = false;
+                status.textContent = r.status === 0 ? 'Billederne kan ikke hentes uden forbindelse.' : 'Kunne ikke hente billeder.';
+            }
+            updateMoreButton(firstPage ? 'Prøv igen' : 'Kunne ikke hente flere billeder — prøv igen');
             return;
         }
-        grid.innerHTML = '';
-        currentPhotos = r.body.items;
-        if (currentPhotos.length === 0) {
+
+        if (firstPage) {
+            document.getElementById('photo-grid').innerHTML = '';
+            currentPhotos = [];
+        }
+        r.body.items.forEach(function (photo) {
+            currentPhotos.push(photo);
+            appendPhotoCard(photo);
+        });
+        photosCursor = r.body.nextCursor || null;
+        photosDone = !photosCursor;
+        updatePhotoStatus();
+        updateMoreButton();
+        if (document.getElementById('lightbox-dialog').open) updateLightboxNav();
+        rearmPhotoObserver();
+    }
+
+    function updatePhotoStatus() {
+        const status = document.getElementById('photo-status');
+        if (currentPhotos.length > 0) {
+            status.hidden = true;
+        } else if (photosDone) {
             status.hidden = false;
             status.textContent = 'Ingen billeder endnu.';
-            return;
         }
-        status.hidden = true;
+    }
 
-        currentPhotos.forEach(function (photo, index) {
-            const card = document.createElement('div');
-            card.className = 'photo-card';
+    function updateMoreButton(errorText) {
+        const btn = document.getElementById('photo-more-btn');
+        btn.hidden = !errorText && photosCursor === null;
+        btn.disabled = photosLoading;
+        btn.textContent = errorText || (photosLoading ? 'Henter billeder...' : 'Vis flere billeder');
+    }
 
-            const img = document.createElement('img');
-            img.src = photo.url;
-            img.alt = photo.caption || 'Billede fra Enebakken';
-            img.loading = 'lazy';
-            img.onclick = function () { openLightbox(index); };
-            card.appendChild(img);
+    // Auto-clicks "Vis flere" as it nears the viewport. Re-arming after each
+    // page makes the observer report again even if the button never left
+    // view (a short page on a tall screen), so the screen still fills up.
+    const photoMoreObserver = 'IntersectionObserver' in window
+        ? new IntersectionObserver(function (entries) {
+            if (entries.some(function (e) { return e.isIntersecting; })) loadMorePhotos();
+        }, { rootMargin: '400px 0px' })
+        : null;
 
-            if (me.role === 'owner' || me.userId === photo.uploaded_by) {
-                const delBtn = document.createElement('button');
-                delBtn.type = 'button';
-                delBtn.className = 'delete-photo-btn';
-                delBtn.setAttribute('aria-label', 'Slet billede');
-                delBtn.appendChild(createTrashIcon());
-                delBtn.onclick = function () { deletePhoto(photo.id); };
-                card.appendChild(delBtn);
-            }
+    function rearmPhotoObserver() {
+        if (!photoMoreObserver) return;
+        const btn = document.getElementById('photo-more-btn');
+        photoMoreObserver.unobserve(btn);
+        if (!btn.hidden) photoMoreObserver.observe(btn);
+    }
 
-            if (photo.caption) {
-                const caption = document.createElement('div');
-                caption.className = 'photo-caption';
-                caption.textContent = photo.caption;
-                card.appendChild(caption);
-            }
-            grid.appendChild(card);
-        });
+    function appendPhotoCard(photo) {
+        const card = document.createElement('div');
+        card.className = 'photo-card';
+
+        const img = document.createElement('img');
+        img.src = photo.url;
+        img.alt = photo.caption || 'Billede fra Enebakken';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.onclick = function () {
+            const index = currentPhotos.indexOf(photo);
+            if (index !== -1) openLightbox(index);
+        };
+        card.appendChild(img);
+
+        if (me.role === 'owner' || me.userId === photo.uploaded_by) {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'delete-photo-btn';
+            delBtn.setAttribute('aria-label', 'Slet billede');
+            delBtn.appendChild(createTrashIcon());
+            delBtn.onclick = function () { deletePhoto(photo, card); };
+            card.appendChild(delBtn);
+        }
+
+        if (photo.caption) {
+            const caption = document.createElement('div');
+            caption.className = 'photo-caption';
+            caption.textContent = photo.caption;
+            card.appendChild(caption);
+        }
+        document.getElementById('photo-grid').appendChild(card);
     }
 
     function openLightbox(index) {
@@ -1912,6 +2025,11 @@
         const captionEl = document.getElementById('lightbox-caption');
         captionEl.textContent = photo.caption || '';
         captionEl.hidden = !photo.caption;
+        updateLightboxNav();
+        if (lightboxIndex >= currentPhotos.length - 3) loadMorePhotos();
+    }
+
+    function updateLightboxNav() {
         document.getElementById('lightbox-prev').hidden = lightboxIndex <= 0;
         document.getElementById('lightbox-next').hidden = lightboxIndex >= currentPhotos.length - 1;
     }
@@ -1984,17 +2102,20 @@
         return svg;
     }
 
-    async function deletePhoto(id) {
+    async function deletePhoto(photo, card) {
         if (!confirm('Slet dette billede?')) return;
         const token = await fetchFreshToken();
-        if (!token) { alert('Din session er udløbet — log ind igen.'); return; }
+        if (!token) { alert(noTokenText()); return; }
         const r = await apiFetch('/photos', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify({ id: id }),
+            body: JSON.stringify({ id: photo.id }),
         });
         if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke slette billedet'); return; }
-        await loadPhotos();
+        const index = currentPhotos.indexOf(photo);
+        if (index !== -1) currentPhotos.splice(index, 1);
+        card.remove();
+        updatePhotoStatus();
     }
 
     // Downscales JPEG/PNG/WEBP to 1000px on the longest edge before upload
@@ -2049,7 +2170,7 @@
         submitBtn.textContent = 'Uploader...';
         try {
             const token = await fetchFreshToken();
-            if (!token) { errorEl.textContent = 'Din session er udløbet — log ind igen'; return false; }
+            if (!token) { errorEl.textContent = noTokenText(); return false; }
 
             const upload = await resizeImageIfNeeded(file);
 
@@ -2060,11 +2181,17 @@
             });
             if (!presign.ok) { errorEl.textContent = (presign.body && presign.body.error) || 'Kunne ikke starte upload'; return false; }
 
-            const putRes = await fetch(presign.body.upload_url, {
-                method: 'PUT',
-                headers: { 'Content-Type': upload.type },
-                body: upload,
-            });
+            let putRes;
+            try {
+                putRes = await fetch(presign.body.upload_url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': upload.type },
+                    body: upload,
+                });
+            } catch (e) {
+                errorEl.textContent = 'Upload fejlede — tjek forbindelsen og prøv igen';
+                return false;
+            }
             if (!putRes.ok) { errorEl.textContent = 'Upload fejlede — prøv igen'; return false; }
 
             const caption = captionInput.value.trim();
@@ -2092,12 +2219,30 @@
 
     // ---------- init ----------
     document.addEventListener('DOMContentLoaded', async function () {
+        loadChecklist(); // public data: a slow sign-in check must not hold it up
         await refreshMe();
         checkForInviteParam();
         checkForResetParam();
-        loadChecklist();
         loadPhotos();
     });
+
+    // Back online: refresh whatever was stale or failed while offline.
+    window.addEventListener('online', async function () {
+        loadChecklist();
+        await refreshMe();
+        if (photosCursor === null && !photosDone) {
+            loadPhotos();
+        } else {
+            photosFailed = false;
+            rearmPhotoObserver();
+        }
+    });
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+    }
 </script>
 
 </body>
