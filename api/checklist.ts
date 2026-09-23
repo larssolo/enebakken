@@ -36,15 +36,26 @@ export default {
           const label = typeof it?.label === "string" ? it.label.trim() : "";
           if (!label) return err(400, "Hvert punkt skal have en label");
           if (label.length > 500) return err(400, "En label er for lang (max 500 tegn)");
+          // Ticks are tied to an item's text, so two identical items would
+          // always be ticked together.
+          if (labels.includes(label)) return err(400, `"${label}" står på listen to gange`);
           labels.push(label);
         }
 
         await sql.begin(async (tx) => {
+          // Same lock as /api/ticks, so a tick can't land on an item this
+          // save is removing.
+          await tx`select list from checklist_resets order by list for update`;
           await tx`delete from checklist_items where list = ${list}`;
           for (let i = 0; i < labels.length; i++) {
             await tx`insert into checklist_items (list, label, position)
                       values (${list}, ${labels[i]}, ${i + 1})`;
           }
+          // Items that kept their text keep their ticks; the rest go.
+          await tx`
+            delete from checklist_ticks t
+            where t.list = ${list}
+              and not exists (select 1 from checklist_items i where i.list = t.list and i.label = t.label)`;
         });
         return json({ ok: true, list, count: labels.length });
       }
