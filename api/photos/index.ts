@@ -3,17 +3,29 @@ import { sql, callerRole } from "../_lib/db.js";
 import { presignGet, objectExists, deleteObject } from "../_lib/storage.js";
 import { json, err, isResponse } from "../_lib/http.js";
 
+const PAGE_SIZE = 24;
+
 export default {
   async fetch(request: Request): Promise<Response> {
     try {
-      // GET /api/photos — public. Newest first, each with a short-lived
-      // presigned view URL (the bucket is private).
+      // GET /api/photos[?before=<id>] — public. Newest first, one page at a
+      // time, each with a presigned view URL (the bucket is private). Pages
+      // by id rather than created_at: ids come from an identity sequence, so
+      // they follow upload order and make a stable, unique cursor.
       if (request.method === "GET") {
-        const rows = await sql`
-          select id, caption, uploaded_by, created_at, object_key
-          from photos order by created_at desc limit 100`;
+        const before = new URL(request.url).searchParams.get("before");
+        if (before !== null && !/^\d{1,18}$/.test(before)) return err(400, "Ugyldig side");
+
+        const rows = before
+          ? await sql`
+              select id, caption, uploaded_by, created_at, object_key
+              from photos where id < ${before} order by id desc limit ${PAGE_SIZE + 1}`
+          : await sql`
+              select id, caption, uploaded_by, created_at, object_key
+              from photos order by id desc limit ${PAGE_SIZE + 1}`;
+        const page = rows.slice(0, PAGE_SIZE);
         const items = await Promise.all(
-          rows.map(async (r) => ({
+          page.map(async (r) => ({
             id: r.id,
             caption: r.caption,
             uploaded_by: r.uploaded_by,
@@ -21,7 +33,8 @@ export default {
             url: await presignGet(r.object_key as string),
           })),
         );
-        return json({ items });
+        const nextCursor = rows.length > PAGE_SIZE ? String(page[page.length - 1].id) : null;
+        return json({ items, nextCursor });
       }
 
       // POST /api/photos — member only. Body: { object_key, caption? }.
