@@ -4,7 +4,8 @@
     "@aws-sdk/s3-request-presigner": "^3.699.0",
     "@neon/config": "^1.7.2",
     "@neon/env": "^1.4.3",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

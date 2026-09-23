@@ -13,9 +13,31 @@ const s3 = new S3Client({
   },
 });
 
-export async function presignPut(key: string, contentType: string): Promise<string> {
-  const cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType });
-  return getSignedUrl(s3, cmd, { expiresIn: 300 });
+export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+// Size and type are part of the signature, so storage itself rejects an
+// upload that isn't exactly what was approved — not just the browser.
+export async function presignPut(key: string, contentType: string, contentLength: number): Promise<string> {
+  const cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType, ContentLength: contentLength });
+  return getSignedUrl(s3, cmd, { expiresIn: 300, signableHeaders: new Set(["content-length", "content-type"]) });
+}
+
+export async function headObject(key: string): Promise<{ size: number } | null> {
+  try {
+    const res = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+    return { size: res.ContentLength ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+export async function getObjectBytes(key: string): Promise<Buffer> {
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+  return Buffer.from(await res.Body!.transformToByteArray());
+}
+
+export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }));
 }
 
 // Signed against the start of a fixed 6-hour window and valid for 12h, so
@@ -29,15 +51,6 @@ export async function presignGet(key: string): Promise<string> {
   const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
   const signingDate = new Date(Math.floor(Date.now() / GET_WINDOW_MS) * GET_WINDOW_MS);
   return getSignedUrl(s3, cmd, { signingDate, expiresIn: (2 * GET_WINDOW_MS) / 1000 });
-}
-
-export async function objectExists(key: string): Promise<boolean> {
-  try {
-    await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function deleteObject(key: string): Promise<void> {
