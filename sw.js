@@ -2,16 +2,20 @@
 // connection. Only public, non-personal responses are cached; everything
 // else (sign-in, photos, anything behind a login) goes straight to the
 // network untouched.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = 'eb-shell-' + VERSION;
 const DATA_CACHE = 'eb-data-' + VERSION;
 const FONT_CACHE = 'eb-fonts-' + VERSION;
 const NETWORK_TIMEOUT_MS = 4000;
 
+// Served stale-while-revalidate, so a changed image needs a new filename
+// (not new content under the old one) to show on the first visit after it.
+const STATIC_ASSETS = ['/enebakken-logo.webp', '/favicon.png'];
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const shell = await caches.open(SHELL_CACHE);
-    await shell.addAll(['/', '/logo.webp', '/favicon.png']);
+    await shell.addAll(['/', ...STATIC_ASSETS]);
     const data = await caches.open(DATA_CACHE);
     await data.add('/api/checklist').catch(() => {});
     await self.skipWaiting();
@@ -40,7 +44,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(event, SHELL_CACHE, '/'));
   } else if (sameOrigin && url.pathname === '/api/checklist' && url.search === '') {
     event.respondWith(networkFirst(event, DATA_CACHE, '/api/checklist'));
-  } else if (sameOrigin && (url.pathname === '/logo.webp' || url.pathname === '/favicon.png')) {
+  } else if (sameOrigin && STATIC_ASSETS.includes(url.pathname)) {
     event.respondWith(staleWhileRevalidate(event, SHELL_CACHE, url.pathname));
   } else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     event.respondWith(staleWhileRevalidate(event, FONT_CACHE, request));
