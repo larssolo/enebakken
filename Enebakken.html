@@ -756,6 +756,8 @@
             transition: border-color 0.2s ease, background-color 0.2s ease;
         }
         .manage-remove-btn:hover { border-color: var(--error); background: rgba(163, 41, 29, 0.08); }
+        .manage-remove-btn.is-neutral { color: var(--ink-soft); }
+        .manage-remove-btn.is-neutral:hover { border-color: var(--gold); background: transparent; }
 
         /* ---- photo board ---- */
         .add-photo-btn {
@@ -949,7 +951,7 @@
                 <h2 class="section-title" id="billeder-title">Opslagstavlen</h2>
                 <button type="button" class="add-photo-btn" id="add-photo-btn" onclick="openUploadDialog()" hidden aria-label="Del et billede">+</button>
             </div>
-            <p class="upload-hint" id="upload-hint" hidden>Kun inviterede kan dele billeder her — log ind, og bed ejeren om en invitation.</p>
+            <p class="upload-hint" id="upload-hint" hidden>Log ind for at dele billeder.</p>
 
             <p class="photo-status" id="photo-status">Henter billeder...</p>
             <div class="photo-grid" id="photo-grid"></div>
@@ -1012,7 +1014,7 @@
                     <label for="signup-password">Adgangskode (mindst 8 tegn)</label>
                     <input type="password" id="signup-password" required minlength="8" autocomplete="new-password">
                 </div>
-                <p class="form-hint">Du får adgang til at redigere og uploade billeder, når ejeren har inviteret dig.</p>
+                <p class="form-hint">Når du er logget ind, kan du dele billeder på opslagstavlen.</p>
                 <p class="form-error" id="signup-error" aria-live="polite"></p>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Opret bruger</button>
@@ -1084,7 +1086,7 @@
             </div>
 
             <div class="manage-section">
-                <h4>Aktive brugere</h4>
+                <h4>Brugere</h4>
                 <ul class="manage-list" id="members-list"></ul>
             </div>
 
@@ -1344,10 +1346,13 @@
     }
 
     function renderPhotoUploadVisibility() {
-        const canUpload = me.role === 'owner' || me.role === 'member';
+        const blocked = me.role === 'blocked';
+        const canUpload = me.authenticated && !blocked;
         document.getElementById('add-photo-btn').hidden = !canUpload;
-        // Offline we can't tell who this is, so don't claim they lack access.
-        document.getElementById('upload-hint').hidden = canUpload || lastTokenOffline;
+        const hint = document.getElementById('upload-hint');
+        hint.textContent = blocked ? 'Din konto er blokeret fra at dele billeder.' : 'Log ind for at dele billeder.';
+        // Offline we can't tell who this is, so don't claim they're signed out.
+        hint.hidden = canUpload || lastTokenOffline;
     }
 
     function showPageBanner(text) {
@@ -1618,25 +1623,35 @@
         }
         r.body.items.forEach(function (m) {
             const isOwner = m.role === 'owner';
-            list.appendChild(manageRow(
-                m.display_name || m.user_id,
-                isOwner ? 'Ejer' : 'Medlem',
-                'Fjern adgang',
-                isOwner ? null : function () { removeMember(m.user_id, m.display_name); }
-            ));
+            const isBlocked = m.role === 'blocked';
+            const meta = [m.email];
+            if (isOwner) meta.push('Ejer');
+            if (isBlocked) meta.push('Blokeret');
+            meta.push(m.photos === 1 ? '1 billede' : m.photos + ' billeder');
+            const row = manageRow(
+                m.display_name || m.email,
+                meta.join(' · '),
+                isBlocked ? 'Fjern blokering' : 'Bloker',
+                isOwner ? null : function () { setBlocked(m.user_id, m.display_name || m.email, !isBlocked); }
+            );
+            if (isBlocked) row.querySelector('.manage-remove-btn').classList.add('is-neutral');
+            list.appendChild(row);
         });
     }
 
-    async function removeMember(userId, name) {
-        if (!confirm('Fjern adgang for ' + (name || 'denne bruger') + '?')) return;
+    async function setBlocked(userId, name, blocked) {
+        const question = blocked
+            ? 'Bloker ' + name + '? Kontoen kan så ikke længere dele billeder.'
+            : 'Fjern blokeringen af ' + name + '?';
+        if (!confirm(question)) return;
         const token = await fetchFreshToken();
         if (!token) { alert(noTokenText()); return; }
         const r = await apiFetch('/members', {
-            method: 'DELETE',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify({ userId: userId }),
+            body: JSON.stringify({ userId: userId, blocked: blocked }),
         });
-        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke fjerne adgangen'); return; }
+        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke ændre blokeringen'); return; }
         await loadMembersList();
     }
 
@@ -2194,7 +2209,7 @@
             const presign = await apiFetch('/photos/presign', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                body: JSON.stringify({ contentType: upload.type }),
+                body: JSON.stringify({ contentType: upload.type, size: upload.size }),
             });
             if (!presign.ok) { errorEl.textContent = (presign.body && presign.body.error) || 'Kunne ikke starte upload'; return false; }
 

@@ -90,10 +90,10 @@ export async function requireOwner(request: Request): Promise<Caller | Response>
   return caller;
 }
 
-export async function requireMember(request: Request): Promise<Caller | Response> {
+// Any signed-in account may upload, unless the owner has blocked it.
+export async function requireUploader(request: Request): Promise<Caller | Response> {
   const caller = await authenticate(request);
   if (!caller) return err(401, "Log ind for at fortsætte");
-  const role = await callerRole(caller.userId);
-  if (!role) return err(403, "Din konto har ikke adgang endnu — bed ejeren om en invitation");
+  if ((await callerRole(caller.userId)) === "blocked") return err(403, "Din konto er blokeret fra at dele billeder");
   return caller;
 }
