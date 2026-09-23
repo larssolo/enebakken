@@ -16,7 +16,7 @@ export default {
         const existing = await tx`select 1 from members limit 1 for update`;
         if (existing.length > 0) return false;
         await tx`insert into members (user_id, role, display_name)
-                  values (${caller.userId}, 'owner', ${caller.email})`;
+                  values (${caller.userId}, 'owner', ${caller.name?.trim() || caller.email})`;
         return true;
       });
 
