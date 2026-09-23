@@ -36,7 +36,7 @@ export default {
         }
         await tx`update invites set accepted_at = now(), accepted_by = ${caller.userId} where id = ${invite.id}`;
         await tx`insert into members (user_id, role, display_name)
-                  values (${caller.userId}, 'member', ${caller.email})
+                  values (${caller.userId}, 'member', ${caller.name?.trim() || caller.email})
                   on conflict (user_id) do nothing`;
         return { ok: true as const };
       });

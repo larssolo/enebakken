@@ -497,7 +497,7 @@
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .edit-actions .btn-primary, .edit-actions .btn-secondary { flex: 1; padding: 10px 12px; font-size: 0.9rem; }
 
-        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden] { display: none; }
+        .edit-actions[hidden], .reset-btn[hidden], .add-photo-btn[hidden], .auth-switch[hidden] { display: none; }
 
         @media (prefers-reduced-motion: no-preference) {
             .tab-content.active .task-item-edit { animation: itemIn 0.3s ease both; }
@@ -606,7 +606,7 @@
             cursor: pointer;
         }
         .auth-switch-btn.active { border-color: var(--falu); color: var(--falu); background: var(--falu-tint); }
-        .invite-banner {
+        .invite-banner, .auth-notice {
             background: var(--gold-tint);
             color: var(--gold-dark);
             padding: 10px 12px;
@@ -614,6 +614,18 @@
             font-size: 0.87rem;
             margin: 0 0 16px;
         }
+        .link-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            color: var(--falu);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.83rem;
+        }
+        .link-btn:hover { opacity: 0.8; }
         .form-row { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; }
         .form-row label { font-size: 0.83rem; font-weight: 600; color: var(--ink-soft); }
         .form-row input {
@@ -940,11 +952,12 @@
 
     <dialog id="auth-dialog">
         <div class="dialog-inner">
-            <div class="auth-switch">
+            <div class="auth-switch" id="auth-switch">
                 <button type="button" class="auth-switch-btn active" id="switch-signin" onclick="setAuthMode('signin')">Log ind</button>
                 <button type="button" class="auth-switch-btn" id="switch-signup" onclick="setAuthMode('signup')">Opret bruger</button>
             </div>
             <p class="invite-banner" id="invite-banner" hidden></p>
+            <p class="auth-notice" id="auth-notice" hidden aria-live="polite"></p>
 
             <form id="signin-form" onsubmit="return handleSignIn(event)">
                 <div class="form-row">
@@ -955,6 +968,7 @@
                     <label for="signin-password">Adgangskode</label>
                     <input type="password" id="signin-password" required autocomplete="current-password">
                 </div>
+                <button type="button" class="link-btn" onclick="showForgotPassword()">Glemt adgangskode?</button>
                 <p class="form-error" id="signin-error" aria-live="polite"></p>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Log ind</button>
@@ -979,6 +993,42 @@
                 <p class="form-error" id="signup-error" aria-live="polite"></p>
                 <div class="form-actions">
                     <button type="submit" class="btn-primary">Opret bruger</button>
+                    <button type="button" class="btn-secondary" onclick="closeAuthDialog()">Luk</button>
+                </div>
+            </form>
+
+            <form id="forgot-form" hidden onsubmit="return handleForgotPassword(event)">
+                <h3>Glemt adgangskode</h3>
+                <p class="form-hint">Skriv den e-mail, du er oprettet med, så sender vi et link, hvor du kan vælge en ny adgangskode.</p>
+                <div class="form-row">
+                    <label for="forgot-email">E-mail</label>
+                    <input type="email" id="forgot-email" required autocomplete="email">
+                </div>
+                <p class="form-error" id="forgot-error" aria-live="polite"></p>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="forgot-submit">Send link</button>
+                    <button type="button" class="btn-secondary" onclick="setAuthMode('signin')">Tilbage</button>
+                </div>
+            </form>
+
+            <div id="forgot-sent" hidden>
+                <h3>Tjek din mail</h3>
+                <p class="auth-notice">Hvis der findes en bruger med den e-mail, er der nu sendt et link. Mailen er afsendt af Neon Auth (auth@mail.myneon.app), så kig også i spam-mappen. Brug linket med det samme — det virker kun i kort tid.</p>
+                <div class="form-actions">
+                    <button type="button" class="btn-primary" onclick="setAuthMode('signin')">Tilbage til log ind</button>
+                </div>
+            </div>
+
+            <form id="reset-form" hidden onsubmit="return handleResetPassword(event)">
+                <h3>Ny adgangskode</h3>
+                <div class="form-row">
+                    <label for="reset-password">Ny adgangskode (mindst 8 tegn)</label>
+                    <input type="password" id="reset-password" required minlength="8" autocomplete="new-password">
+                </div>
+                <button type="button" class="link-btn" onclick="setAuthMode('forgot')">Virker linket ikke? Bed om et nyt</button>
+                <p class="form-error" id="reset-error" aria-live="polite"></p>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="reset-submit">Gem ny adgangskode</button>
                     <button type="button" class="btn-secondary" onclick="closeAuthDialog()">Luk</button>
                 </div>
             </form>
@@ -1091,6 +1141,7 @@
         element.classList.toggle('completed', checkbox.checked);
 
         const container = element.closest('.tab-content');
+        if (container) saveChecks(container.id);
         if (checkbox.checked && container) {
             const boxes = container.querySelectorAll('input[type="checkbox"]');
             const allChecked = Array.from(boxes).every(box => box.checked);
@@ -1141,6 +1192,32 @@
             cb.checked = false;
             cb.closest('.task-item').classList.remove('completed');
         });
+        saveChecks(containerId);
+    }
+
+    // Ticks untouched for this long are from a previous visit, not an
+    // accidental reload, and must not resurface on the next one.
+    const CHECKS_TTL_MS = 24 * 60 * 60 * 1000;
+
+    function loadChecks(listId) {
+        try {
+            const saved = JSON.parse(localStorage.getItem('enebakken:checked:' + listId));
+            if (saved && Array.isArray(saved.labels) && Date.now() - saved.at < CHECKS_TTL_MS) {
+                return new Set(saved.labels);
+            }
+        } catch (e) {}
+        return new Set();
+    }
+
+    function saveChecks(listId) {
+        const labels = [];
+        document.querySelectorAll('#' + listId + '-list .task-item').forEach(function (li) {
+            if (li.querySelector('input[type="checkbox"]').checked) labels.push(li.dataset.label);
+        });
+        try {
+            if (labels.length === 0) localStorage.removeItem('enebakken:checked:' + listId);
+            else localStorage.setItem('enebakken:checked:' + listId, JSON.stringify({ at: Date.now(), labels: labels }));
+        } catch (e) {}
     }
 
     // ==================== backend wiring ====================
@@ -1237,19 +1314,115 @@
     // ---------- auth dialog ----------
     function openAuthDialog() {
         setAuthMode('signin');
-        document.getElementById('signin-error').textContent = '';
-        document.getElementById('signup-error').textContent = '';
+        ['signin-error', 'signup-error', 'forgot-error', 'reset-error'].forEach(function (id) {
+            document.getElementById(id).textContent = '';
+        });
         document.getElementById('auth-dialog').showModal();
     }
     function closeAuthDialog() {
         document.getElementById('auth-dialog').close();
     }
     function setAuthMode(mode) {
-        const isSignIn = mode === 'signin';
-        document.getElementById('signin-form').hidden = !isSignIn;
-        document.getElementById('signup-form').hidden = isSignIn;
-        document.getElementById('switch-signin').classList.toggle('active', isSignIn);
-        document.getElementById('switch-signup').classList.toggle('active', !isSignIn);
+        document.getElementById('signin-form').hidden = mode !== 'signin';
+        document.getElementById('signup-form').hidden = mode !== 'signup';
+        document.getElementById('forgot-form').hidden = mode !== 'forgot';
+        document.getElementById('forgot-sent').hidden = true;
+        document.getElementById('reset-form').hidden = mode !== 'reset';
+        document.getElementById('auth-switch').hidden = mode === 'forgot' || mode === 'reset';
+        document.getElementById('switch-signin').classList.toggle('active', mode === 'signin');
+        document.getElementById('switch-signup').classList.toggle('active', mode === 'signup');
+        document.getElementById('auth-notice').hidden = true;
+    }
+    function showAuthNotice(text) {
+        const notice = document.getElementById('auth-notice');
+        notice.textContent = text;
+        notice.hidden = false;
+    }
+
+    function showForgotPassword() {
+        document.getElementById('forgot-email').value = document.getElementById('signin-email').value;
+        document.getElementById('forgot-error').textContent = '';
+        setAuthMode('forgot');
+    }
+
+    async function handleForgotPassword(event) {
+        event.preventDefault();
+        const errorEl = document.getElementById('forgot-error');
+        const submitBtn = document.getElementById('forgot-submit');
+        errorEl.textContent = '';
+        submitBtn.disabled = true;
+        try {
+            const r = await apiFetch('/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: document.getElementById('forgot-email').value.trim() }),
+            });
+            if (!r.ok) {
+                errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke sende mailen';
+                return false;
+            }
+            document.getElementById('forgot-form').hidden = true;
+            document.getElementById('auth-notice').hidden = true;
+            document.getElementById('forgot-sent').hidden = false;
+        } finally {
+            submitBtn.disabled = false;
+        }
+        return false;
+    }
+
+    let pendingResetToken = null;
+
+    async function handleResetPassword(event) {
+        event.preventDefault();
+        const errorEl = document.getElementById('reset-error');
+        const submitBtn = document.getElementById('reset-submit');
+        const passwordInput = document.getElementById('reset-password');
+        errorEl.textContent = '';
+        submitBtn.disabled = true;
+        try {
+            const r = await apiFetch('/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: pendingResetToken || '', newPassword: passwordInput.value }),
+            });
+            if (!r.ok) {
+                errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke ændre adgangskoden';
+                return false;
+            }
+            pendingResetToken = null;
+            passwordInput.value = '';
+            if (me.authenticated) {
+                closeAuthDialog();
+                showPageBanner('Din adgangskode er ændret.');
+            } else {
+                setAuthMode('signin');
+                showAuthNotice('Din adgangskode er ændret. Log ind med den nye.');
+            }
+        } finally {
+            submitBtn.disabled = false;
+        }
+        return false;
+    }
+
+    // Arrives from the emailed link as ?reset=1&token=... (or &error=...).
+    // The token is kept in memory only and stripped from the address bar
+    // right away, so it doesn't linger in history or a bookmark.
+    function checkForResetParam() {
+        const params = new URLSearchParams(location.search);
+        if (params.get('reset') !== '1') return;
+        pendingResetToken = params.get('token');
+
+        const url = new URL(location.href);
+        ['reset', 'token', 'error'].forEach(function (p) { url.searchParams.delete(p); });
+        history.replaceState({}, '', url);
+
+        openAuthDialog();
+        if (pendingResetToken) {
+            setAuthMode('reset');
+        } else {
+            setAuthMode('forgot');
+            showAuthNotice('Linket er ugyldigt eller udløbet. Skriv din e-mail, så sender vi et nyt.');
+        }
     }
 
     async function handleSignIn(event) {
@@ -1541,15 +1714,21 @@
         }
         status.hidden = true;
 
+        const checked = loadChecks(listId);
         items.forEach(function (item, i) {
             const li = document.createElement('li');
             li.className = 'task-item';
+            li.dataset.label = item.label;
             li.style.setProperty('--i', i);
             li.onclick = function (event) { toggleTask(event, li); };
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.setAttribute('aria-label', item.label);
+            if (checked.has(item.label)) {
+                checkbox.checked = true;
+                li.classList.add('completed');
+            }
 
             const label = document.createElement('label');
             label.textContent = item.label;
@@ -1915,6 +2094,7 @@
     document.addEventListener('DOMContentLoaded', async function () {
         await refreshMe();
         checkForInviteParam();
+        checkForResetParam();
         loadChecklist();
         loadPhotos();
     });
