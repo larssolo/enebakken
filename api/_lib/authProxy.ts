@@ -14,7 +14,7 @@ export const AUTH_BASE = process.env.NEON_AUTH_BASE_URL!;
 export const SITE_ORIGIN = "https://www.enebakken.info";
 
 const MY_COOKIE = "eb_session";
-const DEFAULT_MAX_AGE = 60 * 60 * 24 * 7; // 7 days, matches Neon Auth's own session lifetime
+export const DEFAULT_MAX_AGE = 60 * 60 * 24 * 7; // 7 days, matches Neon Auth's own session lifetime
 
 function upstreamSetCookieHeader(res: Response): string | null {
   const headers = res.headers as Headers & { getSetCookie?: () => string[] };

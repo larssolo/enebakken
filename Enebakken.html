@@ -1316,7 +1316,7 @@
                     <button type="submit" class="btn-primary">Opret invitation</button>
                 </form>
                 <div id="invite-result" hidden>
-                    <p class="form-hint">Invitationen er klar.</p>
+                    <p class="form-hint">Invitationen er klar — personen logges ind med ét tryk, ingen adgangskode nødvendig.</p>
                     <button type="button" class="btn-primary invite-mailto-btn" id="invite-mailto-btn" onclick="sendInviteMail()">Send invitation via mail</button>
                     <p class="form-hint">...eller kopiér linket:</p>
                     <div class="invite-link-row">
@@ -1640,6 +1640,14 @@
         }
 
         bar.appendChild(document.createTextNode(' · '));
+        const pwBtn = document.createElement('button');
+        pwBtn.type = 'button';
+        pwBtn.className = 'account-link';
+        pwBtn.textContent = 'Skift adgangskode';
+        pwBtn.onclick = openChangePassword;
+        bar.appendChild(pwBtn);
+
+        bar.appendChild(document.createTextNode(' · '));
         const signOutBtn = document.createElement('button');
         signOutBtn.type = 'button';
         signOutBtn.className = 'account-link';
@@ -1671,12 +1679,16 @@
     }
 
     // ---------- auth dialog ----------
-    function openAuthDialog() {
-        setAuthMode('signin');
+    function openAuthDialog(mode) {
+        setAuthMode(mode || 'signin');
         ['signin-error', 'signup-error', 'forgot-error', 'reset-error'].forEach(function (id) {
             document.getElementById(id).textContent = '';
         });
         document.getElementById('auth-dialog').showModal();
+    }
+    function openChangePassword() {
+        document.getElementById('forgot-email').value = me.email || '';
+        openAuthDialog('forgot');
     }
     function closeAuthDialog() {
         document.getElementById('auth-dialog').close();
@@ -1873,7 +1885,8 @@
 
         const subject = 'Du er inviteret til Enebakken';
         const body = 'Hej!\n\nDu er inviteret til Enebakkens side, hvor vi deler tjeklister og billeder fra huset.\n\n'
-            + 'Tryk på linket for at oprette en bruger og komme i gang:\n' + r.body.link + '\n\nVi ses!';
+            + 'Tryk på linket, og log ind med ét tryk — ingen adgangskode nødvendig:\n' + r.body.link
+            + '\n\nVil du hellere vælge din egen adgangskode, kan du skifte den, når du er logget ind.\n\nVi ses!';
         pendingInviteMailto = 'mailto:' + encodeURIComponent(r.body.email)
             + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
 
@@ -2062,6 +2075,12 @@
         if (pendingInviteMailto) location.href = pendingInviteMailto;
     }
 
+    function removeInviteParamFromUrl() {
+        const url = new URL(location.href);
+        url.searchParams.delete('invite');
+        history.replaceState({}, '', url);
+    }
+
     async function tryRedeemPendingInvite() {
         if (!pendingInviteToken || !me.authenticated) return;
         const tokenToRedeem = pendingInviteToken;
@@ -2082,11 +2101,17 @@
             showPageBanner((r.body && r.body.error) || 'Kunne ikke acceptere invitationen');
         }
 
-        const url = new URL(location.href);
-        url.searchParams.delete('invite');
-        history.replaceState({}, '', url);
+        removeInviteParamFromUrl();
     }
 
+    // Most invite links carry a pre-provisioned account and can log the
+    // visitor straight in, no sign-in/sign-up form needed — see POST
+    // /api/invites. That redemption only fires on an explicit click, never
+    // just from loading the page: a mail client or chat app that renders
+    // the link for a preview (and runs its JavaScript) would otherwise be
+    // able to spend the one-time invite before the real person ever sees
+    // it. Only if the account already existed some other way does this
+    // fall back to the classic "log in or sign up yourself" flow.
     function checkForInviteParam() {
         const params = new URLSearchParams(location.search);
         const token = params.get('invite');
@@ -2095,12 +2120,46 @@
 
         if (me.authenticated) {
             tryRedeemPendingInvite();
-        } else {
-            const banner = document.getElementById('invite-banner');
-            banner.hidden = false;
-            banner.textContent = 'Du er inviteret! Log ind eller opret en bruger for at fortsætte.';
-            openAuthDialog();
+            return;
         }
+
+        const banner = document.getElementById('invite-banner');
+        banner.hidden = false;
+        banner.textContent = '';
+        banner.appendChild(document.createTextNode('Du er inviteret! '));
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'link-btn';
+        btn.textContent = 'Tryk her for at logge ind';
+        btn.onclick = confirmInviteLogin;
+        banner.appendChild(btn);
+        openAuthDialog();
+    }
+
+    async function confirmInviteLogin() {
+        const token = pendingInviteToken;
+        if (!token) return;
+
+        const r = await apiFetch('/invites/redeem', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token }),
+        });
+        if (r.ok && r.body && r.body.autoLoggedIn) {
+            pendingInviteToken = null;
+            cachedToken = null;
+            removeInviteParamFromUrl();
+            closeAuthDialog();
+            await refreshMe();
+            showPageBanner('Velkommen! Du er logget ind med en adgangskode, siden har valgt. Vil du selv vælge en, kan du skifte den under "Skift adgangskode".');
+            return;
+        }
+
+        // The invited email already had an account some other way (or
+        // provisioning failed) — fall back to asking them to sign in or
+        // sign up themselves; pendingInviteToken stays set so that
+        // succeeding does redeem it via tryRedeemPendingInvite().
+        document.getElementById('invite-banner').textContent = 'Du er inviteret! Log ind eller opret en bruger for at fortsætte.';
     }
 
     // ---------- checklist ----------
