@@ -943,10 +943,9 @@
         .manage-list { list-style: none; padding: 0; margin: 0; }
         .manage-row {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            padding: 8px 0;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px 0;
             border-bottom: 1px solid var(--border);
         }
         .manage-row:last-child { border-bottom: none; }
@@ -954,18 +953,15 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
-            overflow: hidden;
             min-width: 0;
         }
         .manage-row-name {
             color: var(--ink);
             font-weight: 600;
             font-size: 0.9rem;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow-wrap: break-word;
         }
-        .manage-row-meta { color: var(--ink-soft); font-size: 0.78rem; }
+        .manage-row-meta { color: var(--ink-soft); font-size: 0.78rem; overflow-wrap: break-word; }
         .manage-empty { color: var(--ink-soft); font-size: 0.85rem; margin: 0; }
         .manage-remove-btn {
             flex-shrink: 0;
@@ -985,7 +981,23 @@
         .manage-remove-btn.is-neutral:hover { border-color: var(--gold); background: transparent; }
         .manage-remove-btn.is-promote { color: var(--gold-dark); }
         .manage-remove-btn.is-promote:hover { border-color: var(--gold-dark); background: rgba(180, 132, 42, 0.1); }
-        .manage-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .manage-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .manage-delete-btn {
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            background: transparent;
+            color: var(--error);
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease;
+        }
+        .manage-delete-btn:hover { border-color: var(--error); background: rgba(163, 41, 29, 0.08); }
 
         /* ---- photo board ---- */
         .add-photo-btn {
@@ -1902,9 +1914,15 @@
             actions.forEach(function (a) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'manage-remove-btn' + (a.variant ? ' is-' + a.variant : '');
-                btn.textContent = a.text;
                 btn.onclick = a.onClick;
+                if (a.icon === 'delete') {
+                    btn.className = 'manage-delete-btn';
+                    btn.setAttribute('aria-label', a.text);
+                    btn.appendChild(createTrashIcon());
+                } else {
+                    btn.className = 'manage-remove-btn' + (a.variant ? ' is-' + a.variant : '');
+                    btn.textContent = a.text;
+                }
                 wrap.appendChild(btn);
             });
             li.appendChild(wrap);
@@ -1939,16 +1957,20 @@
             const actions = [];
             if (isBlocked) {
                 actions.push({ text: 'Fjern blokering', variant: 'neutral', onClick: function () { setBlocked(m.user_id, name, false); } });
+                actions.push({ text: 'Slet konto', icon: 'delete', onClick: function () { deleteUser(m.user_id, name); } });
             } else if (isOwner) {
                 // The last remaining administrator can't demote themselves
                 // (or be demoted) — no button, same as before this feature
-                // existed at all, rather than a click that can only fail.
+                // existed at all, rather than a click that can only fail. An
+                // administrator can't be deleted at all — fjern administrator
+                // first, same rule as blocking.
                 if (ownerCount > 1) {
                     actions.push({ text: 'Fjern administrator', variant: 'neutral', onClick: function () { setOwner(m.user_id, name, false); } });
                 }
             } else {
                 actions.push({ text: 'Gør til administrator', variant: 'promote', onClick: function () { setOwner(m.user_id, name, true); } });
                 actions.push({ text: 'Bloker', onClick: function () { setBlocked(m.user_id, name, true); } });
+                actions.push({ text: 'Slet konto', icon: 'delete', onClick: function () { deleteUser(m.user_id, name); } });
             }
             list.appendChild(manageRow(name, meta.join(' · '), actions));
         });
@@ -1983,6 +2005,21 @@
             body: JSON.stringify({ userId: userId, owner: owner }),
         });
         if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke ændre administrator-status'); return; }
+        await loadMembersList();
+    }
+
+    async function deleteUser(userId, name) {
+        const question = 'Slet ' + name + ' helt? Kontoen kan ikke logges ind på igen, og dette kan ikke fortrydes. '
+            + 'Billeder personen har delt, bliver stående.';
+        if (!confirm(question)) return;
+        const token = await fetchFreshToken();
+        if (!token) { alert(noTokenText()); return; }
+        const r = await apiFetch('/members', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({ userId: userId }),
+        });
+        if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke slette kontoen'); return; }
         await loadMembersList();
     }
 
