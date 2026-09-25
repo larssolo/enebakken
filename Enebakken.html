@@ -11,6 +11,13 @@
     <link rel="apple-touch-icon" href="/favicon.png">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="apple-mobile-web-app-title" content="Enebakken">
+    <!-- Safari (iOS/iPadOS) doesn't install from the manifest alone the way
+         Chrome does — without these, "Føj til hjemmeskærm" just adds a
+         bookmark that opens in ordinary Safari, address bar and all,
+         instead of a standalone app. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Enebakken">
     <meta property="og:locale" content="da_DK">
