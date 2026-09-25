@@ -525,6 +525,29 @@
             cursor: pointer;
         }
         .remove-item-btn:hover { border-color: var(--falu); color: var(--falu); }
+        .move-btns {
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            gap: 2px;
+        }
+        .move-btn {
+            width: 26px;
+            height: 17px;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--ink-soft);
+            font-size: 0.65rem;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .move-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-dark); }
+        .move-btn:disabled { opacity: 0.3; cursor: default; }
 
         .list-actions { margin-top: 20px; }
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -2236,9 +2259,29 @@
     function renderEditRows(listId) {
         const ul = document.getElementById(listId + '-list');
         ul.innerHTML = '';
-        editDraft[listId].forEach(function (label, i) {
+        const draft = editDraft[listId];
+        draft.forEach(function (label, i) {
             const li = document.createElement('li');
             li.className = 'task-item-edit';
+
+            const moveBtns = document.createElement('div');
+            moveBtns.className = 'move-btns';
+            const upBtn = document.createElement('button');
+            upBtn.type = 'button';
+            upBtn.className = 'move-btn';
+            upBtn.setAttribute('aria-label', 'Flyt op');
+            upBtn.textContent = '▲';
+            upBtn.disabled = i === 0;
+            upBtn.onclick = function () { moveEditRow(listId, i, -1); };
+            const downBtn = document.createElement('button');
+            downBtn.type = 'button';
+            downBtn.className = 'move-btn';
+            downBtn.setAttribute('aria-label', 'Flyt ned');
+            downBtn.textContent = '▼';
+            downBtn.disabled = i === draft.length - 1;
+            downBtn.onclick = function () { moveEditRow(listId, i, 1); };
+            moveBtns.appendChild(upBtn);
+            moveBtns.appendChild(downBtn);
 
             const input = document.createElement('input');
             input.type = 'text';
@@ -2257,10 +2300,24 @@
                 renderEditRows(listId);
             };
 
+            li.appendChild(moveBtns);
             li.appendChild(input);
             li.appendChild(removeBtn);
             ul.appendChild(li);
         });
+    }
+
+    function moveEditRow(listId, i, delta) {
+        const draft = editDraft[listId];
+        const j = i + delta;
+        if (j < 0 || j >= draft.length) return;
+        const tmp = draft[i];
+        draft[i] = draft[j];
+        draft[j] = tmp;
+        renderEditRows(listId);
+        const inputs = document.querySelectorAll('#' + listId + '-list .edit-input');
+        const moved = inputs[j];
+        if (moved) moved.focus();
     }
 
     function toggleEditMode(listId) {
