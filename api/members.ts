@@ -80,6 +80,47 @@ export default {
         return json({ ok: true });
       }
 
+      // DELETE /api/members — administrator only. Body: { userId }. Removes
+      // the account entirely — it can never sign in again. An administrator
+      // has to be demoted first (same rule as blocking): this keeps deletion
+      // from ever being the path that empties the site of administrators,
+      // since demoting already guards that on its own.
+      //
+      // The account lives in Neon Auth's own schema, which this app doesn't
+      // own, so there's no single "delete user" call to make — every table
+      // that can reference it (checked: session, account, verification by
+      // email, and the user row itself; the organization/member/invitation
+      // tables are Better Auth's own org plugin, which this app never
+      // uses and are confirmed empty) is cleared in one transaction. Photos
+      // they uploaded are deliberately left as they are: uploaded_by was
+      // never a foreign key, and the gallery never displays it as a name,
+      // only uses it for "may I delete this" — an orphaned id just means
+      // nobody but an administrator can remove that photo, which already
+      // held for a blocked account too.
+      if (request.method === "DELETE") {
+        const body: any = await request.json().catch(() => null);
+        const userId = typeof body?.userId === "string" ? body.userId : "";
+        if (!userId) return err(400, "Mangler userId");
+
+        const found = await sql`
+          select u.email, m.role from neon_auth.user u left join members m on m.user_id = u.id::text
+          where u.id::text = ${userId}`;
+        if (found.length === 0) return err(404, "Findes ikke");
+        if (found[0].role === "owner") {
+          return err(400, "En administrator kan ikke slettes — fjern administrator-status først");
+        }
+        const email = found[0].email as string;
+
+        await sql.begin(async (tx) => {
+          await tx`delete from neon_auth.session where "userId" = ${userId}`;
+          await tx`delete from neon_auth.account where "userId" = ${userId}`;
+          await tx`delete from neon_auth.verification where identifier = ${email}`;
+          await tx`delete from members where user_id = ${userId}`;
+          await tx`delete from neon_auth.user where id::text = ${userId}`;
+        });
+        return json({ ok: true });
+      }
+
       return err(405, "Metode ikke understøttet");
     } catch (e) {
       console.error(e);
