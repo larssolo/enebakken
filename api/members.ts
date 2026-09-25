@@ -25,25 +25,57 @@ export default {
         return json({ items: rows });
       }
 
-      // PATCH /api/members — owner only. Body: { userId, blocked }. Blocking
-      // stops new uploads; the account can still sign in and view the site.
+      // PATCH /api/members — administrator only. Body: { userId, blocked }
+      // to block/unblock, or { userId, owner } to promote/demote an
+      // administrator — exactly one of the two. Blocking stops new
+      // uploads and checklist ticks; the account can still sign in and view
+      // the site. Any administrator can promote or demote any other,
+      // including the one making the call (self-demotion is fine as long
+      // as at least one administrator is left afterward).
       if (request.method === "PATCH") {
         const body: any = await request.json().catch(() => null);
         const userId = typeof body?.userId === "string" ? body.userId : "";
-        if (!userId || typeof body?.blocked !== "boolean") return err(400, "Mangler userId eller blocked");
+        const hasBlocked = typeof body?.blocked === "boolean";
+        const hasOwner = typeof body?.owner === "boolean";
+        if (!userId || hasBlocked === hasOwner) {
+          return err(400, "Mangler userId og præcis ét af blocked eller owner");
+        }
 
         const found = await sql`
-          select m.role from neon_auth.user u left join members m on m.user_id = u.id::text
+          select u.name, u.email, m.role from neon_auth.user u left join members m on m.user_id = u.id::text
           where u.id::text = ${userId}`;
         if (found.length === 0) return err(404, "Findes ikke");
-        if (found[0].role === "owner") return err(400, "Ejeren kan ikke blokeres");
+        const currentRole = found[0].role as string | null;
 
-        if (body.blocked) {
+        if (hasBlocked) {
+          if (currentRole === "owner") return err(400, "En administrator kan ikke blokeres");
+          if (body.blocked) {
+            await sql`
+              insert into members (user_id, role) values (${userId}, 'blocked')
+              on conflict (user_id) do update set role = 'blocked' where members.role <> 'owner'`;
+          } else {
+            await sql`delete from members where user_id = ${userId} and role = 'blocked'`;
+          }
+        } else if (body.owner) {
+          if (currentRole === "blocked") {
+            return err(400, "Kontoen skal afblokeres, før den kan gøres til administrator");
+          }
+          const displayName = (found[0].name as string | null)?.trim() || (found[0].email as string);
           await sql`
-            insert into members (user_id, role) values (${userId}, 'blocked')
-            on conflict (user_id) do update set role = 'blocked' where members.role <> 'owner'`;
+            insert into members (user_id, role, display_name) values (${userId}, 'owner', ${displayName})
+            on conflict (user_id) do update set role = 'owner'`;
         } else {
-          await sql`delete from members where user_id = ${userId} and role = 'blocked'`;
+          if (currentRole !== "owner") return err(400, "Kontoen er ikke administrator");
+          // Locks every owner row before counting, so two administrators
+          // demoted at the same moment can't both slip past this check and
+          // leave the site with none.
+          const demoted = await sql.begin(async (tx) => {
+            const owners = await tx`select user_id from members where role = 'owner' for update`;
+            if (owners.length <= 1) return false;
+            await tx`delete from members where user_id = ${userId} and role = 'owner'`;
+            return true;
+          });
+          if (!demoted) return err(400, "Der skal altid være mindst én administrator");
         }
         return json({ ok: true });
       }

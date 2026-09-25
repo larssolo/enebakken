@@ -86,7 +86,7 @@ export async function requireOwner(request: Request): Promise<Caller | Response>
   const caller = await authenticate(request);
   if (!caller) return err(401, "Log ind for at fortsætte");
   const role = await callerRole(caller.userId);
-  if (role !== "owner") return err(403, "Kun ejeren kan gøre dette");
+  if (role !== "owner") return err(403, "Kun en administrator kan gøre dette");
   return caller;
 }
 

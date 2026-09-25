@@ -20,7 +20,7 @@ export default {
         return true;
       });
 
-      if (!claimed) return err(409, "Der er allerede en ejer");
+      if (!claimed) return err(409, "Der er allerede en administrator");
       return json({ ok: true, role: "owner" });
     } catch (e) {
       console.error(e);
