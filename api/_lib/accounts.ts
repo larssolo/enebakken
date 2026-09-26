@@ -1,5 +1,13 @@
 import { sql } from "./db.js";
 
+// A person's name, whether they set it themselves or it's given with an
+// invite: trimmed, with runs of whitespace (a double space, a stray tab or
+// newline) collapsed to one space. "" when there's no usable name.
+export const MAX_NAME_LENGTH = 100;
+export function normalizeName(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+}
+
 // Removes an account entirely from Neon Auth's own schema plus this app's
 // members row. Neon Auth owns that schema, so there's no single "delete
 // user" call — every table that can reference the account (session,

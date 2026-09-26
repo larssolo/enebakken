@@ -1,0 +1,13 @@
+{
+  "name": "enebakken-tests",
+  "private": true,
+  "type": "module",
+  "description": "API and browser tests for Enebakken, run against a local Postgres. See tests/README.md.",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.56.1"
+  }
+}

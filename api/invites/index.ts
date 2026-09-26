@@ -1,13 +1,14 @@
 import { requireOwner } from "../_lib/auth.js";
 import { sql } from "../_lib/db.js";
 import { json, err, isResponse } from "../_lib/http.js";
-import { deleteAuthAccount } from "../_lib/accounts.js";
+import { deleteAuthAccount, MAX_NAME_LENGTH, normalizeName } from "../_lib/accounts.js";
 import { AUTH_BASE, getUpstreamCookiePair, upstreamHeaders } from "../_lib/authProxy.js";
 import { randomBytes, createHash } from "node:crypto";
 
-// A friendly placeholder shown until the account has a real name — the
-// invitee never types one, since they never fill in a sign-up form.
-function inviteeName(email: string): string {
+// The name to create the account under when the invite didn't give one:
+// the invitee never fills in a sign-up form, so there's nothing else to go
+// on. They can change it themselves afterwards ("Skift navn").
+function nameFromEmail(email: string): string {
   const local = email.split("@")[0];
   const words = local.split(/[._+-]+/).filter(Boolean);
   if (words.length === 0) return email;
@@ -30,15 +31,19 @@ export default {
         return json({ items: rows });
       }
 
-      // POST /api/invites — owner only. Body: { email }.
+      // POST /api/invites — owner only. Body: { email, name? }.
       // Returns the raw link; the owner shares it themselves. Clicking the
       // link logs the invitee straight in — see the auto-provisioning
       // below and /invites/redeem — so they never have to think up a
       // password themselves; they can always set their own afterwards.
+      // name is what the new account is called; it only applies when the
+      // invite creates the account, never to one that already exists.
       if (request.method === "POST") {
         const body: any = await request.json().catch(() => null);
         const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
         if (!email || !email.includes("@")) return err(400, "Ugyldig e-mail");
+        const givenName = normalizeName(body?.name);
+        if (givenName.length > MAX_NAME_LENGTH) return err(400, `Navnet må højst være ${MAX_NAME_LENGTH} tegn`);
 
         const priorRows = await sql`
           select provisioned_user_id from invites where email = ${email} and accepted_at is null`;
@@ -64,7 +69,7 @@ export default {
           const upstream = await fetch(`${AUTH_BASE}/sign-up/email`, {
             method: "POST",
             headers: upstreamHeaders(),
-            body: JSON.stringify({ email, password: tempPassword, name: inviteeName(email) }),
+            body: JSON.stringify({ email, password: tempPassword, name: givenName || nameFromEmail(email) }),
           });
           if (upstream.ok) {
             const upstreamBody: any = await upstream.json().catch(() => null);
