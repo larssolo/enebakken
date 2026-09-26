@@ -1645,7 +1645,7 @@
             btn.type = 'button';
             btn.className = 'account-link';
             btn.textContent = 'Log ind';
-            btn.onclick = openAuthDialog;
+            btn.onclick = function () { openAuthDialog(); };
             bar.appendChild(btn);
             return;
         }
@@ -1702,11 +1702,16 @@
     }
 
     // ---------- auth dialog ----------
+    // Only a string counts as a mode: wired straight to an onclick, this
+    // would otherwise get the click event and hide every form in the dialog.
     function openAuthDialog(mode) {
-        setAuthMode(mode || 'signin');
+        setAuthMode(typeof mode === 'string' ? mode : 'signin');
         ['signin-error', 'signup-error', 'forgot-error', 'reset-error'].forEach(function (id) {
             document.getElementById(id).textContent = '';
         });
+        // The invite banner belongs to the invite still waiting to be used;
+        // once it has been (or there never was one), it must not linger.
+        document.getElementById('invite-banner').hidden = !pendingInviteToken;
         document.getElementById('auth-dialog').showModal();
     }
     function openChangePassword() {
