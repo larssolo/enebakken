@@ -1622,6 +1622,7 @@
     // so it leaves `me` as it was rather than flipping the page to signed out.
     async function refreshMe() {
         const signedOut = { authenticated: false, userId: null, email: null, name: null, role: null };
+        const before = me.userId + '|' + me.role;
         const token = await fetchFreshToken();
         if (!token) {
             if (!lastTokenOffline) { me = signedOut; authResolved = true; }
@@ -1633,6 +1634,9 @@
         renderAccountBar();
         renderEditButtons();
         renderPhotoUploadVisibility();
+        // Who may delete which photo is decided when a card is drawn, so a
+        // sign-in, sign-out or role change has to redraw the cards.
+        if (me.userId + '|' + me.role !== before) redrawPhotoCards();
         onTicksModeChange();
     }
 
@@ -1921,7 +1925,9 @@
         document.getElementById('invite-form').hidden = true;
         document.getElementById('invite-result').hidden = false;
         document.getElementById('invite-link').value = r.body.link;
-        await loadPendingInvites();
+        // Creating the invite usually creates the account too, so it
+        // belongs in the user list straight away, not on the next opening.
+        await Promise.all([loadPendingInvites(), loadMembersList()]);
         return false;
     }
 
@@ -1971,12 +1977,20 @@
         return li;
     }
 
+    // Several reloads can overlap (opening the dialog, then acting at once);
+    // only the newest one's answer is drawn, so rows can't appear twice.
+    let membersListGen = 0;
+    let pendingInvitesGen = 0;
+
     async function loadMembersList() {
+        const gen = ++membersListGen;
         const list = document.getElementById('members-list');
-        list.innerHTML = '';
         const token = await fetchFreshToken();
+        if (gen !== membersListGen) return;
         if (!token) return;
         const r = await apiFetch('/members', { headers: { Authorization: 'Bearer ' + token } });
+        if (gen !== membersListGen) return;
+        list.innerHTML = '';
         if (!r.ok) return;
         if (r.body.items.length === 0) {
             const empty = document.createElement('p');
@@ -1993,7 +2007,8 @@
             const meta = [m.email];
             if (isOwner) meta.push('Administrator');
             if (isBlocked) meta.push('Blokeret');
-            meta.push(m.photos === 1 ? '1 billede' : m.photos + ' billeder');
+            if (m.invite_pending) meta.push('Inviteret — har ikke brugt linket endnu');
+            else meta.push(m.photos === 1 ? '1 billede' : m.photos + ' billeder');
 
             const actions = [];
             if (isBlocked) {
@@ -2034,9 +2049,12 @@
     }
 
     async function setOwner(userId, name, owner) {
+        const self = userId === me.userId;
         const question = owner
             ? 'Gør ' + name + ' til administrator? Personen kan så redigere huskelisterne og administrere alle brugere.'
-            : 'Fjern ' + name + ' som administrator?';
+            : self
+                ? 'Fjern dig selv som administrator? Du kan så ikke længere redigere huskelisterne eller administrere brugere.'
+                : 'Fjern ' + name + ' som administrator?';
         if (!confirm(question)) return;
         const token = await fetchFreshToken();
         if (!token) { alert(noTokenText()); return; }
@@ -2046,6 +2064,14 @@
             body: JSON.stringify({ userId: userId, owner: owner }),
         });
         if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke ændre administrator-status'); return; }
+        if (self && !owner) {
+            // No longer allowed in here: the list would only come back as
+            // a refusal, and the page's own admin controls must go too.
+            closeManageUsersDialog();
+            await refreshMe();
+            showPageBanner('Du er ikke længere administrator.');
+            return;
+        }
         await loadMembersList();
     }
 
@@ -2065,12 +2091,15 @@
     }
 
     async function loadPendingInvites() {
+        const gen = ++pendingInvitesGen;
         const section = document.getElementById('pending-invites-section');
         const list = document.getElementById('pending-invites-list');
-        list.innerHTML = '';
         const token = await fetchFreshToken();
+        if (gen !== pendingInvitesGen) return;
         if (!token) return;
         const r = await apiFetch('/invites', { headers: { Authorization: 'Bearer ' + token } });
+        if (gen !== pendingInvitesGen) return;
+        list.innerHTML = '';
         if (!r.ok || r.body.items.length === 0) {
             section.hidden = true;
             return;
@@ -2096,7 +2125,8 @@
             body: JSON.stringify({ id: id }),
         });
         if (!r.ok) { alert((r.body && r.body.error) || 'Kunne ikke annullere invitationen'); return; }
-        await loadPendingInvites();
+        // Cancelling also removes the account the invite had created.
+        await Promise.all([loadPendingInvites(), loadMembersList()]);
     }
 
     function sendInviteMail() {
@@ -2900,6 +2930,11 @@
             card.appendChild(caption);
         }
         document.getElementById('photo-grid').appendChild(card);
+    }
+
+    function redrawPhotoCards() {
+        document.getElementById('photo-grid').innerHTML = '';
+        currentPhotos.forEach(function (photo) { appendPhotoCard(photo); });
     }
 
     function openLightbox(index) {

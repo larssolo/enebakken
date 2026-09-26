@@ -31,6 +31,10 @@ export default {
 
       if (invite.session_cookie) {
         const userId = invite.provisioned_user_id as string;
+        // Never report a login that can't have happened: without the
+        // account, the stored session is dead too.
+        const account = await sql`select 1 from neon_auth.user where id::text = ${userId}`;
+        if (account.length === 0) return err(400, "Invitationen er ikke længere gyldig — bed om en ny");
         await sql.begin(async (tx) => {
           await tx`update invites set accepted_at = now(), accepted_by = ${userId}, session_cookie = null where id = ${invite.id}`;
           await tx`insert into members (user_id, role, display_name)

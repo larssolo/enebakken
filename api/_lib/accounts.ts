@@ -8,8 +8,13 @@ import { sql } from "./db.js";
 // which this app never uses) is cleared in one transaction. Callers decide
 // on their own whether the account is safe to delete (e.g. never an
 // administrator) before calling this.
+//
+// An invite still waiting to be used that created this account is withdrawn
+// too: its stored session died with the account, so the link could only
+// ever claim to log someone in without actually doing it.
 export async function deleteAuthAccount(userId: string, email: string): Promise<void> {
   await sql.begin(async (tx) => {
+    await tx`delete from invites where provisioned_user_id = ${userId} and accepted_at is null`;
     await tx`delete from neon_auth.session where "userId" = ${userId}`;
     await tx`delete from neon_auth.account where "userId" = ${userId}`;
     await tx`delete from neon_auth.verification where identifier = ${email}`;
