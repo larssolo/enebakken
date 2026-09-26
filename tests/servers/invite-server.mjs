@@ -33,6 +33,7 @@ async function resetDb() {
 }
 let OWNER_ID = await resetDb();
 let failUpdateUser = false;
+let tokenMode = "ok"; // "ok" | "401" | "500" — what /neondb/auth/token answers next
 
 const routeApis = {
   invites: await loadApi("invites/index"),
@@ -65,8 +66,17 @@ http.createServer(async (req, res) => {
     failUpdateUser = url.searchParams.get("on") === "1";
     return send(res, 200, { failUpdateUser });
   }
+  // Makes the next /neondb/auth/token calls answer as Neon Auth being
+  // temporarily unavailable ("500") or the session having actually ended
+  // ("401"), instead of succeeding, to check the frontend and the real
+  // token.ts handler tell those two apart correctly.
+  if (p === "/__test/token-mode") {
+    tokenMode = url.searchParams.get("mode") || "ok";
+    return send(res, 200, { tokenMode });
+  }
   if (p === "/__test/reset") {
     failUpdateUser = false;
+    tokenMode = "ok";
     OWNER_ID = await resetDb();
     return send(res, 200, { ok: true, ownerId: OWNER_ID });
   }
@@ -123,6 +133,8 @@ http.createServer(async (req, res) => {
     return send(res, 200, { status: true });
   }
   if (p === "/neondb/auth/token") {
+    if (tokenMode === "500") { res.writeHead(500); return res.end("boom"); }
+    if (tokenMode === "401") return send(res, 401, { error: "forced by test" });
     const pair = req.headers.cookie || "";
     const m = /(?:^|;\s*)mock_session=([^;]+)/.exec(pair);
     if (!m) return send(res, 401, { error: "no session" });

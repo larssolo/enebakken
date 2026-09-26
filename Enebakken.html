@@ -1260,7 +1260,7 @@
                 <button type="button" class="link-btn" onclick="showForgotPassword()">Glemt adgangskode?</button>
                 <p class="form-error" id="signin-error" aria-live="polite"></p>
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">Log ind</button>
+                    <button type="submit" class="btn-primary" id="signin-submit">Log ind</button>
                     <button type="button" class="btn-secondary" onclick="closeAuthDialog()">Luk</button>
                 </div>
             </form>
@@ -1281,7 +1281,7 @@
                 <p class="form-hint">Når du er logget ind, kan du dele billeder på opslagstavlen.</p>
                 <p class="form-error" id="signup-error" aria-live="polite"></p>
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">Opret bruger</button>
+                    <button type="submit" class="btn-primary" id="signup-submit">Opret bruger</button>
                     <button type="button" class="btn-secondary" onclick="closeAuthDialog()">Luk</button>
                 </div>
             </form>
@@ -1596,6 +1596,12 @@
     }
 
     let lastTokenOffline = false;
+    // Only a real 401 from the login check means the session itself is
+    // gone. Anything else that keeps a token from coming back — no
+    // connection, or the check failing on our end or Neon Auth's — says
+    // nothing about whether it's still good, so it's kept apart from an
+    // actual sign-out.
+    let lastTokenConfirmedSignedOut = false;
     // Set once we know for sure whether someone is signed in; offline at
     // start, we don't.
     let authResolved = false;
@@ -1603,11 +1609,12 @@
     async function fetchFreshToken(signal) {
         const r = await apiFetch('/auth/token', signal ? { signal: signal } : undefined);
         lastTokenOffline = r.status === 0;
+        lastTokenConfirmedSignedOut = r.status === 401;
         if (r.ok && r.body && r.body.token) {
             rememberToken(r.body.token);
             return r.body.token;
         }
-        if (!lastTokenOffline) cachedToken = null;
+        if (lastTokenConfirmedSignedOut) cachedToken = null;
         return null;
     }
 
@@ -1637,21 +1644,24 @@
     }
 
     function noTokenText() {
-        return lastTokenOffline ? OFFLINE_TEXT : 'Din session er udløbet — log ind igen.';
+        if (lastTokenOffline) return OFFLINE_TEXT;
+        if (lastTokenConfirmedSignedOut) return 'Din session er udløbet — log ind igen.';
+        return 'Kunne ikke tjekke login lige nu — prøv igen om lidt.';
     }
 
-    // A failed request with no connection says nothing about the session,
-    // so it leaves `me` as it was rather than flipping the page to signed out.
+    // A failed request with no connection, or the login check itself
+    // failing without actually saying the session is invalid, says nothing
+    // about the session — so it leaves `me` as it was rather than flipping
+    // the page to signed out. Only a confirmed 401 does that.
     async function refreshMe() {
         const signedOut = { authenticated: false, userId: null, email: null, name: null, role: null };
         const before = me.userId + '|' + me.role;
         const token = await fetchFreshToken();
         if (!token) {
-            if (!lastTokenOffline) { me = signedOut; authResolved = true; }
+            if (lastTokenConfirmedSignedOut) { me = signedOut; authResolved = true; }
         } else {
             const r = await apiFetch('/me', { headers: { Authorization: 'Bearer ' + token } });
             if (r.ok) { me = r.body; authResolved = true; }
-            else if (r.status !== 0) { me = signedOut; authResolved = true; }
         }
         renderAccountBar();
         renderEditButtons();
@@ -1902,20 +1912,26 @@
         const email = document.getElementById('signin-email').value.trim();
         const password = document.getElementById('signin-password').value;
         const errorEl = document.getElementById('signin-error');
+        const submitBtn = document.getElementById('signin-submit');
         errorEl.textContent = '';
 
-        const r = await apiFetch('/auth/sign-in', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: email, password: password }),
-        });
-        if (!r.ok) {
-            errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke logge ind';
-            return false;
+        submitBtn.disabled = true;
+        try {
+            const r = await apiFetch('/auth/sign-in', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password }),
+            });
+            if (!r.ok) {
+                errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke logge ind';
+                return false;
+            }
+            closeAuthDialog();
+            await refreshMe();
+            await tryRedeemPendingInvite();
+        } finally {
+            submitBtn.disabled = false;
         }
-        closeAuthDialog();
-        await refreshMe();
-        await tryRedeemPendingInvite();
         return false;
     }
 
@@ -1925,20 +1941,26 @@
         const email = document.getElementById('signup-email').value.trim();
         const password = document.getElementById('signup-password').value;
         const errorEl = document.getElementById('signup-error');
+        const submitBtn = document.getElementById('signup-submit');
         errorEl.textContent = '';
 
-        const r = await apiFetch('/auth/sign-up', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name, email: email, password: password }),
-        });
-        if (!r.ok) {
-            errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke oprette bruger';
-            return false;
+        submitBtn.disabled = true;
+        try {
+            const r = await apiFetch('/auth/sign-up', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, email: email, password: password }),
+            });
+            if (!r.ok) {
+                errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke oprette bruger';
+                return false;
+            }
+            closeAuthDialog();
+            await refreshMe();
+            await tryRedeemPendingInvite();
+        } finally {
+            submitBtn.disabled = false;
         }
-        closeAuthDialog();
-        await refreshMe();
-        await tryRedeemPendingInvite();
         return false;
     }
 
