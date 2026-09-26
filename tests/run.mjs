@@ -17,8 +17,10 @@ const SUITE_TIMEOUT_MS = 5 * 60 * 1000;
 const SUITES = [
   { file: "api/members.test.mjs" },
   { file: "api/ticks.test.mjs" },
+  { file: "api/token.test.mjs" },
   { file: "api/invites.test.mjs", server: "invite-server.mjs" },
   { file: "ui/invites.test.mjs", server: "invite-server.mjs" },
+  { file: "ui/remember-login.test.mjs", server: "invite-server.mjs" },
   { file: "ui/admin.test.mjs", server: "admin-server.mjs" },
   { file: "ui/uploads.test.mjs", server: "admin-server.mjs" },
   { file: "ui/checklist-reorder.test.mjs", server: "ticks-server.mjs" },
