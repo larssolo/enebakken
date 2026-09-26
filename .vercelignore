@@ -7,3 +7,5 @@ skills-lock.json
 .mcp.json
 .claude/
 node_modules/
+tests/
+.github/

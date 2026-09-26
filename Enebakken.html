@@ -1335,6 +1335,10 @@
                         <label for="invite-email">E-mail på den du vil invitere</label>
                         <input type="email" id="invite-email" required autocomplete="off">
                     </div>
+                    <div class="form-row">
+                        <label for="invite-name">Personens navn (valgfrit)</label>
+                        <input type="text" id="invite-name" maxlength="100" autocomplete="off">
+                    </div>
                     <p class="form-error" id="invite-error" aria-live="polite"></p>
                     <button type="submit" class="btn-primary">Opret invitation</button>
                 </form>
@@ -1362,6 +1366,24 @@
             <div class="form-actions">
                 <button type="button" class="btn-secondary" onclick="closeManageUsersDialog()">Luk</button>
             </div>
+        </div>
+    </dialog>
+
+    <dialog id="name-dialog">
+        <div class="dialog-inner">
+            <h3>Skift navn</h3>
+            <form id="name-form" onsubmit="return handleChangeName(event)">
+                <div class="form-row">
+                    <label for="name-input">Dit navn</label>
+                    <input type="text" id="name-input" required maxlength="100" autocomplete="name">
+                </div>
+                <p class="form-hint">Navnet ses af de andre, f.eks. ved dine flueben på huskesedlen.</p>
+                <p class="form-error" id="name-error" aria-live="polite"></p>
+                <div class="form-actions">
+                    <button type="submit" class="btn-primary" id="name-submit">Gem</button>
+                    <button type="button" class="btn-secondary" onclick="closeNameDialog()">Annullér</button>
+                </div>
+            </form>
         </div>
     </dialog>
 
@@ -1667,6 +1689,14 @@
         }
 
         bar.appendChild(document.createTextNode(' · '));
+        const nameBtn = document.createElement('button');
+        nameBtn.type = 'button';
+        nameBtn.className = 'account-link';
+        nameBtn.textContent = 'Skift navn';
+        nameBtn.onclick = function () { openNameDialog(); };
+        bar.appendChild(nameBtn);
+
+        bar.appendChild(document.createTextNode(' · '));
         const pwBtn = document.createElement('button');
         pwBtn.type = 'button';
         pwBtn.className = 'account-link';
@@ -1724,6 +1754,45 @@
     }
     function closeAuthDialog() {
         document.getElementById('auth-dialog').close();
+    }
+
+    function openNameDialog() {
+        document.getElementById('name-input').value = me.name || '';
+        document.getElementById('name-error').textContent = '';
+        document.getElementById('name-dialog').showModal();
+    }
+    function closeNameDialog() {
+        document.getElementById('name-dialog').close();
+    }
+
+    async function handleChangeName(event) {
+        event.preventDefault();
+        const input = document.getElementById('name-input');
+        const errorEl = document.getElementById('name-error');
+        const submitBtn = document.getElementById('name-submit');
+        const name = input.value.trim();
+        errorEl.textContent = '';
+        if (!name) { errorEl.textContent = 'Skriv dit navn'; return false; }
+
+        submitBtn.disabled = true;
+        try {
+            const token = await fetchFreshToken();
+            if (!token) { errorEl.textContent = noTokenText(); return false; }
+            const r = await apiFetch('/me', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                body: JSON.stringify({ name: name }),
+            });
+            if (!r.ok) { errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke gemme navnet'; return false; }
+            closeNameDialog();
+            // The name travels in the token, so the one in hand is stale now.
+            cachedToken = null;
+            await refreshMe();
+            showPageBanner('Dit navn er ændret til ' + ((r.body && r.body.name) || name) + '.');
+        } finally {
+            submitBtn.disabled = false;
+        }
+        return false;
     }
     function setAuthMode(mode) {
         document.getElementById('signin-form').hidden = mode !== 'signin';
@@ -1886,6 +1955,7 @@
         document.getElementById('invite-form').hidden = false;
         document.getElementById('invite-result').hidden = true;
         document.getElementById('invite-email').value = '';
+        document.getElementById('invite-name').value = '';
         document.getElementById('invite-error').textContent = '';
         pendingInviteMailto = null;
         document.getElementById('manage-users-dialog').showModal();
@@ -1899,6 +1969,7 @@
     async function handleInvite(event) {
         event.preventDefault();
         const email = document.getElementById('invite-email').value.trim();
+        const name = document.getElementById('invite-name').value.trim();
         const errorEl = document.getElementById('invite-error');
         errorEl.textContent = '';
 
@@ -1908,7 +1979,7 @@
         const r = await apiFetch('/invites', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify({ email: email }),
+            body: JSON.stringify(name ? { email: email, name: name } : { email: email }),
         });
         if (!r.ok) {
             errorEl.textContent = (r.body && r.body.error) || 'Kunne ikke oprette invitation';
@@ -1916,7 +1987,8 @@
         }
 
         const subject = 'Du er inviteret til Enebakken';
-        const body = 'Hej!\n\nDu er inviteret til Enebakkens side, hvor vi deler tjeklister og billeder fra huset.\n\n'
+        const greeting = name ? 'Hej ' + name.split(/\s+/)[0] + '!' : 'Hej!';
+        const body = greeting + '\n\nDu er inviteret til Enebakkens side, hvor vi deler tjeklister og billeder fra huset.\n\n'
             + 'Tryk på linket, og log ind med ét tryk — ingen adgangskode nødvendig:\n' + r.body.link
             + '\n\nVil du hellere vælge din egen adgangskode, kan du skifte den, når du er logget ind.\n\nVi ses!';
         pendingInviteMailto = 'mailto:' + encodeURIComponent(r.body.email)
@@ -2209,7 +2281,7 @@
             removeInviteParamFromUrl();
             closeAuthDialog();
             await refreshMe();
-            showPageBanner('Velkommen! Du er logget ind med en adgangskode, siden har valgt. Vil du selv vælge en, kan du skifte den under "Skift adgangskode".');
+            showPageBanner('Velkommen! Du er logget ind med en adgangskode, siden har valgt. Nederst på siden kan du rette dit navn under "Skift navn" og vælge din egen adgangskode under "Skift adgangskode".');
             return;
         }
 

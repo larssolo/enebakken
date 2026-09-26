@@ -7,3 +7,7 @@ node_modules/
 
 # Lokal Neon-tilstand
 .neon/
+
+# Testkørsler: bundtede api-filer og skærmbilleder
+tests/.build/
+tests/.artifacts/
