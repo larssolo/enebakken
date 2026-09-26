@@ -12,6 +12,8 @@ export default {
       // GET /api/members — owner only. Every account that exists, not just
       // invited ones: anyone can sign up and upload, so the owner needs to
       // see (and be able to block) accounts they never invited.
+      // invite_pending: an invite created this account and nobody has used
+      // the link yet, so no one has actually logged into it.
       if (request.method === "GET") {
         const rows = await sql`
           select u.id::text as user_id,
@@ -19,7 +21,9 @@ export default {
                  u.email,
                  coalesce(m.role, 'user') as role,
                  u."createdAt" as created_at,
-                 (select count(*)::int from photos p where p.uploaded_by = u.id::text) as photos
+                 (select count(*)::int from photos p where p.uploaded_by = u.id::text) as photos,
+                 exists(select 1 from invites i
+                        where i.provisioned_user_id = u.id::text and i.accepted_at is null) as invite_pending
           from neon_auth.user u
           left join members m on m.user_id = u.id::text
           order by (m.role = 'owner') desc nulls last, u."createdAt"`;

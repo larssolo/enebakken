@@ -24,7 +24,11 @@ export default {
       const upstreamBody: any = await upstream.json().catch(() => null);
 
       if (!upstream.ok) {
-        if (upstream.status === 422) return err(409, "Der findes allerede en bruger med denne e-mail");
+        // An invite creates the account up front, so an invited person who
+        // tries to sign up instead lands here without knowing any password.
+        if (upstream.status === 422) {
+          return err(409, "Der findes allerede en bruger med denne e-mail. Er du inviteret, så brug linket i invitationen — ellers log ind, eller tryk \"Glemt adgangskode?\".");
+        }
         return err(400, upstreamBody?.message || "Kunne ikke oprette bruger");
       }
 
