@@ -12,10 +12,15 @@ const NETWORK_TIMEOUT_MS = 4000;
 // (not new content under the old one) to show on the first visit after it.
 const STATIC_ASSETS = ['/enebakken-logo.webp', '/favicon.png'];
 
+// The easter-egg game: network-first like the page itself, so a new version
+// shows up at once when online, and it still opens at the cabin offline.
+const GAME_PATH = '/dyrevennerne.html';
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const shell = await caches.open(SHELL_CACHE);
     await shell.addAll(['/', ...STATIC_ASSETS]);
+    await shell.add(GAME_PATH).catch(() => {}); // nice to have: never fail the install over it
     const data = await caches.open(DATA_CACHE);
     await data.add('/api/checklist').catch(() => {});
     await self.skipWaiting();
@@ -44,6 +49,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(event, SHELL_CACHE, '/'));
   } else if (sameOrigin && url.pathname === '/api/checklist' && url.search === '') {
     event.respondWith(networkFirst(event, DATA_CACHE, '/api/checklist'));
+  } else if (sameOrigin && url.pathname === GAME_PATH) {
+    event.respondWith(networkFirst(event, SHELL_CACHE, GAME_PATH));
   } else if (sameOrigin && STATIC_ASSETS.includes(url.pathname)) {
     event.respondWith(staleWhileRevalidate(event, SHELL_CACHE, url.pathname));
   } else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
