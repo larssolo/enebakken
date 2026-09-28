@@ -14,7 +14,7 @@ page.on("pageerror", (e) => pageErrors.push(String(e)));
 await page.goto(BASE + "/", { waitUntil: "load" });
 await page.evaluate(() => { me = { authenticated: true, userId: 'u-alice', email: 'alice@example.com', name: 'Alice Owner', role: 'owner' }; renderAccountBar(); });
 await page.locator('#account-bar button:has-text("Administrer brugere")').click();
-await sleep(400);
+await page.locator('#members-list .manage-row').nth(3).waitFor(); // all 4 seeded accounts listed
 
 // Exactly one dialog listener at a time, registered right before the click
 // that triggers it - a blanket page-wide auto-accept would fire alongside
@@ -25,11 +25,22 @@ function expectDialog(action) {
     page.once("dialog", (d) => { lastConfirmText = d.message(); (action === "accept" ? d.accept() : d.dismiss()); resolve(); });
   });
 }
+// An accepted action saves, then reloads the list: three round trips in a
+// row, which on a slow CI runner can take well over any fixed pause. So an
+// accepted action waits for the list to actually change (each one here
+// does change it); a dismissed one must change nothing, which the checks
+// after it verify.
 async function clickThrough(locator, action = "accept") {
+  const before = JSON.stringify(await rows());
   const wait = expectDialog(action);
   await locator.click();
   await wait;
-  await sleep(300);
+  if (action !== "accept") { await sleep(300); return; }
+  for (let i = 0; i < 100; i++) {
+    if (JSON.stringify(await rows()) !== before) return;
+    await sleep(50);
+  }
+  throw new Error("the user list never changed after an accepted action");
 }
 
 const rows = () => page.evaluate(() => Array.from(document.querySelectorAll('#members-list .manage-row')).map((li) => ({
@@ -93,8 +104,9 @@ await clickThrough(btn('Dana Normal', 'Fjern administrator')); // clean up back 
 
 // ---- deleting an account: the icon button, its confirmation, and the real effect ----
 const delBtn = (name) => page.locator('#members-list .manage-row', { hasText: name }).locator('.manage-delete-btn');
-page.once("dialog", (d) => { lastConfirmText = d.message(); d.dismiss(); });
+const dismissed = expectDialog("dismiss");
 await delBtn('Carl Blocked').click();
+await dismissed;
 await sleep(200);
 check("delete confirmation warns it can't be undone and photos stay", lastConfirmText === 'Slet Carl Blocked helt? Kontoen kan ikke logges ind på igen, og dette kan ikke fortrydes. Billeder personen har delt, bliver stående.', lastConfirmText);
 list = await rows();
