@@ -25,6 +25,7 @@ const SUITES = [
   { file: "ui/uploads.test.mjs", server: "admin-server.mjs" },
   { file: "ui/checklist-reorder.test.mjs", server: "ticks-server.mjs" },
   { file: "ui/shared-ticks.test.mjs", server: "ticks-server.mjs" },
+  { file: "ui/game.test.mjs", server: "ticks-server.mjs" },
 ];
 
 function freePort() {
