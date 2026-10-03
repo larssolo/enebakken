@@ -500,9 +500,12 @@
             padding: 8px 0;
             border-bottom: 1px solid var(--border);
         }
-        .task-item-edit:last-child { border-bottom: none; }
+        /* Transparent rather than none: every row keeps the same height, so a
+           dragged row and the rows sliding past it trade places exactly. */
+        .task-item-edit:last-child { border-bottom-color: transparent; }
         .task-item-edit .edit-input {
             flex: 1;
+            min-width: 0; /* a text field won't shrink below ~20 characters otherwise, pushing × off narrow phones */
             font-family: inherit;
             font-size: 0.98rem;
             padding: 8px 10px;
@@ -525,29 +528,51 @@
             cursor: pointer;
         }
         .remove-item-btn:hover { border-color: var(--falu); color: var(--falu); }
-        .move-btns {
-            display: flex;
-            flex-direction: column;
+        /* Drag to reorder: the grip is the handle, so the text field stays an
+           ordinary text field. The row moves with `translate`, not
+           `transform`, which the rows' entry animation holds on to. */
+        .drag-handle {
             flex-shrink: 0;
-            gap: 2px;
-        }
-        .move-btn {
-            width: 26px;
-            height: 17px;
+            align-self: stretch;
+            width: 30px;
+            margin: -8px 0; /* as tall as the whole row, for a finger, without making it taller */
             padding: 0;
-            border: 1px solid var(--border);
-            border-radius: 4px;
+            border: none;
+            border-radius: 6px;
             background: transparent;
             color: var(--ink-soft);
-            font-size: 0.65rem;
-            line-height: 1;
-            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: grab;
+            touch-action: none; /* a drag on it moves the row, not the page */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
-        .move-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-dark); }
-        .move-btn:disabled { opacity: 0.3; cursor: default; }
+        .drag-handle:hover { color: var(--gold-dark); background: var(--gold-tint); }
+        .drag-handle:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+        .task-item-edit.dragging, .task-item-edit.settling { position: relative; z-index: 2; }
+        .task-item-edit.dragging {
+            background: var(--card-bg);
+            border-bottom-color: transparent;
+            border-radius: 4px;
+            box-shadow: 0 0 0 6px var(--card-bg), 0 12px 24px -4px var(--shadow);
+            scale: 1.02;
+        }
+        .task-item-edit.dragging .drag-handle { color: var(--gold-dark); }
+        html.row-dragging, html.row-dragging * { cursor: grabbing !important; -webkit-user-select: none; user-select: none; }
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            padding: 0;
+            border: 0;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
 
         .list-actions { margin-top: 20px; }
         .edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -574,6 +599,8 @@
 
         @media (prefers-reduced-motion: no-preference) {
             .tab-content.active .task-item-edit { animation: itemIn 0.3s ease both; }
+            .task-list.is-sorting .task-item-edit:not(.dragging):not(.settling) { transition: translate 0.18s ease; }
+            .task-item-edit.settling { transition: translate 0.16s ease, scale 0.16s ease, box-shadow 0.16s ease; }
             .tab-content.active .photo-card { animation: itemIn 0.4s ease both; }
         }
 
@@ -1039,6 +1066,8 @@
             </div>
             <p class="share-hint" hidden><button type="button" class="inline-link" onclick="openAuthDialog()">Log ind</button> for at se og dele fluebenene med de andre i huset.</p>
         </div>
+        <p class="visually-hidden" id="reorder-hint">Træk for at flytte punktet, eller brug pil op og pil ned.</p>
+        <p class="visually-hidden" id="reorder-status" aria-live="polite"></p>
 
         <div id="billeder" class="tab-content" role="tabpanel">
             <div class="section-title-row">
@@ -2131,6 +2160,7 @@
     }
 
     function renderList(listId) {
+        if (rowDrag && rowDrag.listId === listId) finishRowDrag(false);
         const ul = document.getElementById(listId + '-list');
         const status = document.getElementById(listId + '-status');
         ul.innerHTML = '';
@@ -2180,39 +2210,39 @@
         applyTicks(listId);
     }
 
+    const GRIP_SVG = '<svg width="12" height="18" viewBox="0 0 12 18" aria-hidden="true" focusable="false"><g fill="currentColor">'
+        + '<circle cx="3" cy="3" r="1.6"/><circle cx="9" cy="3" r="1.6"/><circle cx="3" cy="9" r="1.6"/>'
+        + '<circle cx="9" cy="9" r="1.6"/><circle cx="3" cy="15" r="1.6"/><circle cx="9" cy="15" r="1.6"/></g></svg>';
+
+    // Rows can be moved without being redrawn, so each one looks up its
+    // place in the list when it needs it rather than remembering it.
+    function editRowIndex(li) {
+        return Array.prototype.indexOf.call(li.parentNode.children, li);
+    }
+
     function renderEditRows(listId) {
+        if (rowDrag && rowDrag.listId === listId) finishRowDrag(false);
         const ul = document.getElementById(listId + '-list');
         ul.innerHTML = '';
-        const draft = editDraft[listId];
-        draft.forEach(function (label, i) {
+        editDraft[listId].forEach(function (label) {
             const li = document.createElement('li');
             li.className = 'task-item-edit';
 
-            const moveBtns = document.createElement('div');
-            moveBtns.className = 'move-btns';
-            const upBtn = document.createElement('button');
-            upBtn.type = 'button';
-            upBtn.className = 'move-btn';
-            upBtn.setAttribute('aria-label', 'Flyt op');
-            upBtn.textContent = '▲';
-            upBtn.disabled = i === 0;
-            upBtn.onclick = function () { moveEditRow(listId, i, -1); };
-            const downBtn = document.createElement('button');
-            downBtn.type = 'button';
-            downBtn.className = 'move-btn';
-            downBtn.setAttribute('aria-label', 'Flyt ned');
-            downBtn.textContent = '▼';
-            downBtn.disabled = i === draft.length - 1;
-            downBtn.onclick = function () { moveEditRow(listId, i, 1); };
-            moveBtns.appendChild(upBtn);
-            moveBtns.appendChild(downBtn);
+            const grip = document.createElement('button');
+            grip.type = 'button';
+            grip.className = 'drag-handle';
+            grip.title = 'Træk for at flytte';
+            grip.setAttribute('aria-describedby', 'reorder-hint');
+            grip.innerHTML = GRIP_SVG;
+            grip.onpointerdown = function (event) { startRowDrag(event, listId, li); };
+            grip.onkeydown = function (event) { moveEditRowByKey(event, listId, li); };
+            grip.oncontextmenu = function (event) { event.preventDefault(); }; // a long press is a drag, not a menu
 
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'edit-input';
             input.value = label;
-            input.setAttribute('aria-label', 'Punkt ' + (i + 1));
-            input.oninput = function () { editDraft[listId][i] = input.value; };
+            input.oninput = function () { editDraft[listId][editRowIndex(li)] = input.value; };
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
@@ -2220,28 +2250,208 @@
             removeBtn.setAttribute('aria-label', 'Fjern punkt');
             removeBtn.textContent = '×';
             removeBtn.onclick = function () {
-                editDraft[listId].splice(i, 1);
+                editDraft[listId].splice(editRowIndex(li), 1);
                 renderEditRows(listId);
             };
 
-            li.appendChild(moveBtns);
+            li.appendChild(grip);
             li.appendChild(input);
             li.appendChild(removeBtn);
             ul.appendChild(li);
         });
+        numberEditRows(listId);
     }
 
-    function moveEditRow(listId, i, delta) {
+    // The row numbers in what a screen reader says follow the rows around.
+    function numberEditRows(listId) {
+        const rows = document.getElementById(listId + '-list').children;
+        for (let k = 0; k < rows.length; k++) {
+            rows[k].querySelector('.drag-handle').setAttribute('aria-label', 'Flyt punkt ' + (k + 1));
+            rows[k].querySelector('.edit-input').setAttribute('aria-label', 'Punkt ' + (k + 1));
+        }
+    }
+
+    // Moves row `from` to place `to`, in the draft and on the page alike.
+    function moveEditRow(listId, from, to) {
         const draft = editDraft[listId];
-        const j = i + delta;
-        if (j < 0 || j >= draft.length) return;
-        const tmp = draft[i];
-        draft[i] = draft[j];
-        draft[j] = tmp;
-        renderEditRows(listId);
-        const inputs = document.querySelectorAll('#' + listId + '-list .edit-input');
-        const moved = inputs[j];
-        if (moved) moved.focus();
+        if (to === from || to < 0 || to >= draft.length) return;
+        draft.splice(to, 0, draft.splice(from, 1)[0]);
+        const ul = document.getElementById(listId + '-list');
+        const rows = ul.children;
+        const li = rows[from];
+        const focused = document.activeElement;
+        ul.insertBefore(li, to < from ? rows[to] : rows[to].nextSibling);
+        // Put back in the page, the row would fade in again as if new.
+        if (li.getAnimations) li.getAnimations().forEach(function (a) { if (a.animationName === 'itemIn') a.finish(); });
+        // Taking a row out to move it can drop the focus inside it.
+        if (focused !== document.activeElement && ul.contains(focused)) focused.focus({ preventScroll: true });
+        numberEditRows(listId);
+        const label = draft[to].trim();
+        document.getElementById('reorder-status').textContent =
+            (label ? '"' + label + '"' : 'Punktet') + ' er nu nr. ' + (to + 1) + ' af ' + draft.length + '.';
+    }
+
+    function moveEditRowByKey(event, listId, li) {
+        const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+        if (!delta || rowDrag) return;
+        event.preventDefault(); // the arrow moves the row, not the page
+        const from = editRowIndex(li);
+        moveEditRow(listId, from, from + delta);
+        li.scrollIntoView({ block: 'nearest' });
+    }
+
+    // ---------- drag to reorder ----------
+    // Pressing a row's grip lifts the row; it follows the finger or mouse,
+    // the rows it passes slide out of its way, and letting go drops it into
+    // the gap. Held near the top or bottom of the screen, the page scrolls
+    // along, so a list longer than the screen can be sorted on a phone.
+    // Escape (or the system taking the touch away) puts the row back.
+    //
+    // Positions are layout offsets (offsetTop), not screen boxes: the card
+    // is tilted a little, which skews bounding boxes but not offsets.
+    const DRAG_EDGE_PX = 64;            // auto-scroll zone at the top and bottom of the screen
+    const DRAG_SCROLL_PX_PER_MS = 0.8;  // auto-scroll speed right at the edge
+    const DRAG_SETTLE_MS = 200;         // a little over the .settling transition
+    let rowDrag = null;
+
+    function startRowDrag(event, listId, li) {
+        if (rowDrag || !event.isPrimary || event.button !== 0) return;
+        event.preventDefault(); // no text selection, and the focus stays where it was
+        const ul = li.parentNode;
+        const rows = Array.prototype.slice.call(ul.children);
+        const from = rows.indexOf(li);
+        rowDrag = {
+            listId: listId, ul: ul, li: li, grip: event.currentTarget, pointerId: event.pointerId,
+            rows: rows, from: from, to: from, offset: 0,
+            tops: rows.map(function (row) { return row.offsetTop; }),
+            heights: rows.map(function (row) { return row.offsetHeight; }),
+            startY: event.clientY, y: event.clientY,
+            startScroll: window.scrollY, lastScroll: window.scrollY,
+            frame: requestAnimationFrame(rowDragFrame), lastFrame: 0,
+        };
+        // Captured, the pointer's events keep coming here even off the grip.
+        try { rowDrag.grip.setPointerCapture(event.pointerId); } catch (e) {}
+        window.addEventListener('pointermove', onRowDragMove);
+        window.addEventListener('pointerup', onRowDragEnd);
+        window.addEventListener('pointercancel', onRowDragEnd);
+        window.addEventListener('keydown', onRowDragKey);
+        // A row still gliding in from the last drop: it's in place now.
+        rows.forEach(function (row) {
+            if (!row.classList.contains('settling')) return;
+            row.classList.remove('settling');
+            row.style.translate = '';
+        });
+        li.classList.add('dragging');
+        ul.classList.add('is-sorting');
+        document.documentElement.classList.add('row-dragging');
+    }
+
+    function onRowDragMove(event) {
+        if (event.pointerId !== rowDrag.pointerId) return;
+        rowDrag.y = event.clientY;
+        positionRowDrag();
+    }
+
+    function onRowDragEnd(event) {
+        if (event.pointerId !== rowDrag.pointerId) return;
+        finishRowDrag(event.type === 'pointerup');
+    }
+
+    function onRowDragKey(event) {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        finishRowDrag(false);
+    }
+
+    function positionRowDrag() {
+        const d = rowDrag;
+        const n = d.rows.length;
+        const top = d.tops[d.from];
+        const h = d.heights[d.from];
+        // Follow the pointer, page scrolling included, but stay in the list.
+        const min = d.tops[0] - top;
+        const max = d.tops[n - 1] + d.heights[n - 1] - h - top;
+        d.offset = Math.min(max, Math.max(min, d.y - d.startY + window.scrollY - d.startScroll));
+        d.li.style.translate = '0 ' + d.offset + 'px';
+        // The row goes where its middle is: once its middle reaches a
+        // neighbour's, they swap. (Reaching, not passing: held against the
+        // end of the list, the row's middle is exactly on the end row's.)
+        const middle = top + d.offset + h / 2;
+        let to = d.from;
+        while (to > 0 && middle <= d.tops[to - 1] + d.heights[to - 1] / 2) to--;
+        while (to < n - 1 && middle >= d.tops[to + 1] + d.heights[to + 1] / 2) to++;
+        if (to === d.to) return;
+        d.to = to;
+        d.rows.forEach(function (row, k) {
+            const shift = k > d.from && k <= to ? -h : k < d.from && k >= to ? h : 0;
+            if (row !== d.li) row.style.translate = shift ? '0 ' + shift + 'px' : '';
+        });
+    }
+
+    // Scrolls the page while the pointer is held near the top or bottom of
+    // the screen (if the list goes on past it there), and keeps the row
+    // under the pointer however the page scrolls, a mouse wheel included.
+    // The screen is the visible part of the page: on a phone with the
+    // keyboard up, its bottom edge is the top of the keyboard.
+    function rowDragFrame(now) {
+        const d = rowDrag;
+        if (!d) return;
+        const dt = d.lastFrame ? Math.min(now - d.lastFrame, 50) : 16;
+        d.lastFrame = now;
+        const list = d.ul.getBoundingClientRect();
+        const view = window.visualViewport;
+        const top = view ? view.offsetTop : 0;
+        const bottom = view ? view.offsetTop + view.height : window.innerHeight;
+        let depth = 0;
+        if (d.y < top + DRAG_EDGE_PX && list.top < top) depth = d.y - (top + DRAG_EDGE_PX);
+        else if (d.y > bottom - DRAG_EDGE_PX && list.bottom > bottom) depth = d.y - (bottom - DRAG_EDGE_PX);
+        if (depth) {
+            const speed = Math.min(1, Math.abs(depth) / DRAG_EDGE_PX) * DRAG_SCROLL_PX_PER_MS;
+            window.scrollBy(0, Math.sign(depth) * Math.max(1, Math.round(speed * dt)));
+        }
+        if (window.scrollY !== d.lastScroll) {
+            d.lastScroll = window.scrollY;
+            positionRowDrag();
+        }
+        d.frame = requestAnimationFrame(rowDragFrame);
+    }
+
+    // Drops the row where it is (commit) or back where it came from. Either
+    // way the list is in its final order at once; the row just glides the
+    // last bit into place.
+    function finishRowDrag(commit) {
+        const d = rowDrag;
+        rowDrag = null;
+        cancelAnimationFrame(d.frame);
+        window.removeEventListener('pointermove', onRowDragMove);
+        window.removeEventListener('pointerup', onRowDragEnd);
+        window.removeEventListener('pointercancel', onRowDragEnd);
+        window.removeEventListener('keydown', onRowDragKey);
+        try { d.grip.releasePointerCapture(d.pointerId); } catch (e) {}
+        document.documentElement.classList.remove('row-dragging');
+
+        const to = commit ? d.to : d.from;
+        // Moved, the other rows already stand where the move puts them, so
+        // they must not slide; put back, they slide home.
+        if (to !== d.from) d.ul.classList.remove('is-sorting');
+        d.rows.forEach(function (row) { if (row !== d.li) row.style.translate = ''; });
+        // Where the row is drawn now, measured from the place it lands in.
+        const landing = to > d.from
+            ? d.tops[to] + d.heights[to] - d.tops[d.from] - d.heights[d.from]
+            : d.tops[to] - d.tops[d.from];
+        const left = d.offset - landing;
+        if (d.li.isConnected) moveEditRow(d.listId, d.from, to);
+        d.li.style.translate = '0 ' + left + 'px';
+        void d.li.offsetWidth; // start the glide from there
+        d.li.classList.remove('dragging');
+        d.li.classList.add('settling');
+        d.li.style.translate = '0 0';
+        setTimeout(function () {
+            if (!rowDrag || rowDrag.ul !== d.ul) d.ul.classList.remove('is-sorting');
+            if (!d.li.classList.contains('settling')) return; // picked up again meanwhile
+            d.li.classList.remove('settling');
+            d.li.style.translate = '';
+        }, DRAG_SETTLE_MS);
     }
 
     function toggleEditMode(listId) {
