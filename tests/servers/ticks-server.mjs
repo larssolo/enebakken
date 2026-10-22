@@ -1,7 +1,7 @@
 // Local stand-in for the site, for browser tests of the shared checklist:
 // the page and static files from the repo, and the REAL /api/ticks,
-// /api/checklist and /api/me handlers (bundled from the repo) on the local
-// Postgres. Sign-in is faked: the cookie eb_test_user=<id> is the session,
+// /api/checklist, /api/me and /api/note handlers (bundled from the repo)
+// on the local Postgres. Sign-in is faked: the cookie eb_test_user=<id> is the session,
 // and /api/auth/token mints a JWT for it with a local Ed25519 key that the
 // handlers verify through their normal JWKS path.
 import http from "node:http";
@@ -23,6 +23,7 @@ const api = {
   "/api/ticks": await loadApi("ticks"),
   "/api/checklist": await loadApi("checklist"),
   "/api/me": await loadApi("me"),
+  "/api/note": await loadApi("note"),
 };
 
 let down = false;

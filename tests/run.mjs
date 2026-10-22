@@ -18,6 +18,7 @@ const SUITES = [
   { file: "api/members.test.mjs" },
   { file: "api/ticks.test.mjs" },
   { file: "api/token.test.mjs" },
+  { file: "api/note.test.mjs" },
   { file: "api/invites.test.mjs", server: "invite-server.mjs" },
   { file: "ui/invites.test.mjs", server: "invite-server.mjs" },
   { file: "ui/remember-login.test.mjs", server: "invite-server.mjs" },
@@ -26,6 +27,7 @@ const SUITES = [
   { file: "ui/checklist-reorder.test.mjs", server: "ticks-server.mjs" },
   { file: "ui/shared-ticks.test.mjs", server: "ticks-server.mjs" },
   { file: "ui/game.test.mjs", server: "ticks-server.mjs" },
+  { file: "ui/note.test.mjs", server: "ticks-server.mjs" },
 ];
 
 function freePort() {
