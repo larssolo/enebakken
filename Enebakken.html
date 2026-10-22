@@ -55,6 +55,8 @@
             --gold-tint: #F3E7C9;
             --gold-dark: #7A5A1D;
             --error: #A3291D;
+            --note-bg: #FBF1D3;
+            --note-tape: rgba(228, 201, 137, 0.6);
             color-scheme: light;
         }
         @media (prefers-color-scheme: dark) {
@@ -79,6 +81,8 @@
                 --gold-tint: #3d3220;
                 --gold-dark: #E0B65C;
                 --error: #E38B7D;
+                --note-bg: #382B1D;
+                --note-tape: rgba(224, 182, 92, 0.32);
                 color-scheme: dark;
             }
         }
@@ -103,6 +107,8 @@
             --gold-tint: #3d3220;
             --gold-dark: #E0B65C;
             --error: #E38B7D;
+            --note-bg: #382B1D;
+            --note-tape: rgba(224, 182, 92, 0.32);
             color-scheme: dark;
         }
 
@@ -397,6 +403,96 @@
         }
         .reset-btn:hover { border-color: var(--gold); color: var(--ink); }
         .reset-btn:active { transform: scale(0.98); }
+
+        /* ---- "Min huskeseddel": a personal note taped to the bottom of "Luk ned" ---- */
+        .note-card {
+            position: relative;
+            margin: 34px 2px 6px;
+            padding: 22px 18px 14px;
+            background: var(--note-bg);
+            border-radius: 3px;
+            box-shadow: 0 12px 20px -14px var(--shadow), 0 1px 0 var(--paper-edge);
+            transform: rotate(0.9deg);
+        }
+        .note-card::before { /* the strip of tape holding it on */
+            content: "";
+            position: absolute;
+            top: -11px;
+            left: 50%;
+            width: 88px;
+            height: 22px;
+            transform: translateX(-50%) rotate(-3deg);
+            background: var(--note-tape);
+        }
+        .note-title {
+            font-family: "Caveat", cursive;
+            font-weight: 700;
+            font-size: 1.55rem;
+            line-height: 1.1;
+            margin: 0;
+            color: var(--ink);
+        }
+        .note-sub, .note-empty, .note-message {
+            margin: 2px 0 6px;
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+        }
+        .note-empty { margin-top: 8px; font-size: 0.9rem; }
+        .note-message { margin-top: 8px; font-size: 0.9rem; }
+        .note-list .task-item { padding: 9px 0; }
+        .note-remove {
+            flex-shrink: 0;
+            width: 30px;
+            height: 30px;
+            margin-left: 8px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            background: transparent;
+            color: var(--ink-soft);
+            font-size: 1.1rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .note-remove:hover, .note-remove:focus-visible { border-color: var(--falu); color: var(--falu); outline: none; }
+        .note-add { display: flex; gap: 8px; margin-top: 12px; }
+        .note-add input {
+            flex: 1;
+            min-width: 0;
+            font-family: inherit;
+            font-size: 1rem; /* 16 px: smaller makes iPhones zoom in on the field */
+            padding: 9px 10px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            background: var(--card-bg);
+            color: var(--ink);
+        }
+        .note-add input:focus { outline: none; border-color: var(--gold); }
+        .note-add .btn-primary { flex: 0 0 auto; padding: 9px 16px; }
+        .note-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+        .note-actions .btn-secondary {
+            flex: 1 1 150px; /* side by side when there's room, else one under the other */
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        /* On a computer with a mouse there's rarely an sms app to open; copying is the way there. */
+        @media (hover: hover) and (pointer: fine) {
+            .note-actions .note-sms { display: none; }
+        }
+        .note-foot {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+            margin-top: 10px;
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+        }
+        .note-foot .inline-link { flex-shrink: 0; }
+        .note-card[hidden], .note-card [hidden] { display: none; }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -1046,6 +1142,29 @@
                 </div>
             </div>
             <p class="share-hint" hidden><button type="button" class="inline-link" onclick="openAuthDialog()">Log ind</button> for at se og dele fluebenene med de andre i huset.</p>
+
+            <section class="note-card" id="note" aria-labelledby="note-title" hidden>
+                <h3 class="note-title" id="note-title">Min huskeseddel</h3>
+                <p class="note-message" id="note-signed-out" hidden><button type="button" class="inline-link" onclick="openAuthDialog()">Log ind</button> for at skrive din egen huskeseddel.</p>
+                <p class="note-message" id="note-blocked" hidden>Din konto er blokeret, så du kan ikke skrive en huskeseddel.</p>
+                <div id="note-body" hidden>
+                    <p class="note-sub">Kun du kan se den.</p>
+                    <ul class="task-list note-list" id="note-list"></ul>
+                    <p class="note-empty" id="note-empty">Skriv det, du skal huske – fx hvad der mangler til næste gang.</p>
+                    <form class="note-add" onsubmit="addNoteItem(event)">
+                        <input type="text" id="note-input" maxlength="200" placeholder="Skriv et punkt …" aria-label="Nyt punkt på din huskeseddel" autocomplete="off">
+                        <button type="submit" class="btn-primary">Tilføj</button>
+                    </form>
+                    <div class="note-actions" id="note-actions">
+                        <button type="button" class="btn-secondary" id="note-copy" onclick="copyNote()">Kopiér teksten</button>
+                        <a class="btn-secondary note-sms" id="note-sms" href="sms:">Send som sms</a>
+                    </div>
+                    <div class="note-foot">
+                        <span id="note-status" aria-live="polite"></span>
+                        <button type="button" class="inline-link" id="note-clear" onclick="clearNote()">Ryd sedlen</button>
+                    </div>
+                </div>
+            </section>
         </div>
 
         <!-- ÅBN OP SECTION -->
@@ -1330,7 +1449,8 @@
         queueTickSync();
 
         if (checkbox.checked) {
-            const boxes = container.querySelectorAll('input[type="checkbox"]');
+            // The list's own boxes: the personal note further down has some too.
+            const boxes = document.querySelectorAll('#' + listId + '-list input[type="checkbox"]');
             const allChecked = Array.from(boxes).every(box => box.checked);
             if (allChecked) celebrate();
         }
@@ -1494,6 +1614,7 @@
         // sign-in, sign-out or role change has to redraw the cards.
         if (me.userId + '|' + me.role !== before) redrawPhotoCards();
         onTicksModeChange();
+        onNoteAuthChange();
     }
 
     function renderAccountBar() {
@@ -2505,6 +2626,341 @@
         exitEditChrome(listId);
         await loadChecklist();
     }
+
+    // ---------- my note ----------
+    // Everyone signed in has their own note at the bottom of "Luk ned" (say,
+    // what to bring next time), ticked off like the lists and sent on as an
+    // sms. It lives on the server, so it follows the account to every
+    // phone, and a copy is kept on this phone, so it can be read and
+    // written at the house with no connection. Changes made here that
+    // haven't got through yet win over the server's copy when they do.
+    const NOTE_KEY = 'enebakken:note:';          // + user id: { items, dirty }
+    const NOTE_LAST_KEY = 'enebakken:note-last';  // who was signed in here last
+    const NOTE_MAX_ITEMS = 100;
+    const NOTE_MAX_TEXT = 200;
+    const NOTE_SAVE_DELAY_MS = 600;
+    const NOTE_STATUS_MS = 8000;
+
+    let note = null;          // { owner, items: [{ id, text, done }], dirty, changes }
+    let noteSynced = false;   // this note has been compared with the server's since it was opened
+    let noteSaveTimer = null;
+    let noteSaving = false;
+    let noteSaveAgain = false;
+    let noteUndo = null;      // the items as they were before the last removal
+    let noteStatusTimer = null;
+
+    function storageGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+    function storageSet(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+    function storageRemove(key) { try { localStorage.removeItem(key); } catch (e) {} }
+
+    function cleanNoteItems(raw) {
+        if (!Array.isArray(raw)) return [];
+        const seen = Object.create(null);
+        return raw.filter(function (it) {
+            if (!it || typeof it.id !== 'string' || !it.id || seen[it.id]) return false;
+            if (typeof it.text !== 'string' || !it.text.trim() || typeof it.done !== 'boolean') return false;
+            seen[it.id] = true;
+            return true;
+        }).slice(0, NOTE_MAX_ITEMS).map(function (it) {
+            return { id: it.id, text: it.text.trim().slice(0, NOTE_MAX_TEXT), done: it.done };
+        });
+    }
+
+    function loadNote(owner) {
+        let saved = null;
+        try { saved = JSON.parse(storageGet(NOTE_KEY + owner)); } catch (e) {}
+        return { owner: owner, items: cleanNoteItems(saved && saved.items), dirty: !!(saved && saved.dirty === true), changes: 0 };
+    }
+
+    function saveNote() {
+        storageSet(NOTE_KEY + note.owner, JSON.stringify({ items: note.items, dirty: note.dirty }));
+    }
+
+    // Whose note to show: the signed-in person's. Offline since the page
+    // opened, we can't ask who that is, so it's whoever was signed in here
+    // last (they didn't sign out, or we'd have forgotten them).
+    function noteOwnerNow() {
+        if (me.authenticated) return me.role === 'blocked' ? null : me.userId;
+        return authResolved ? null : storageGet(NOTE_LAST_KEY);
+    }
+
+    function onNoteAuthChange() {
+        const owner = noteOwnerNow();
+        if (me.authenticated && owner) storageSet(NOTE_LAST_KEY, owner);
+        if (authResolved && !me.authenticated) {
+            // Signed out: nothing personal stays on this phone, except
+            // changes that never reached the server (kept for next time).
+            storageRemove(NOTE_LAST_KEY);
+            if (note && !note.dirty) storageRemove(NOTE_KEY + note.owner);
+        }
+        if (!note || note.owner !== owner) {
+            note = owner ? loadNote(owner) : null;
+            noteSynced = false;
+            noteUndo = null;
+            setNoteStatus('');
+            const input = document.getElementById('note-input');
+            input.value = '';
+        }
+        renderNote();
+        // Also when back online with changes made here meanwhile.
+        if (note && me.authenticated && (!noteSynced || note.dirty)) syncNote();
+    }
+
+    // Brings this phone and the server into line.
+    async function syncNote() {
+        if (!note) return;
+        if (note.dirty) return pushNote();
+        const current = note;
+        const changes = current.changes;
+        const token = await getSyncToken();
+        if (!token || note !== current || current.dirty) return;
+        const r = await apiFetch('/note', { headers: { Authorization: 'Bearer ' + token } });
+        // Changed here meanwhile (even if that has been saved since): this
+        // answer is older than what the phone has, so it's dropped.
+        if (!r.ok || note !== current || current.changes !== changes) return;
+        current.items = cleanNoteItems(r.body && r.body.items);
+        noteSynced = true;
+        saveNote();
+        renderNote();
+    }
+
+    async function pushNote() {
+        clearTimeout(noteSaveTimer);
+        if (!note || !note.dirty || !me.authenticated || me.userId !== note.owner) return;
+        if (noteSaving) { noteSaveAgain = true; return; }
+        noteSaving = true;
+        const current = note;
+        const body = JSON.stringify({ items: current.items });
+        try {
+            const token = await getSyncToken();
+            if (!token || note !== current) return;
+            const r = await apiFetch('/note', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                body: body,
+                keepalive: true, // still goes if the page is being left
+            });
+            if (note !== current) return;
+            if (r.ok) {
+                noteSynced = true;
+                // Changed again while this was on its way: that goes next.
+                if (JSON.stringify({ items: current.items }) === body) { current.dirty = false; saveNote(); }
+            } else if (r.status !== 0) {
+                setNoteStatus((r.body && r.body.error) || 'Kunne ikke gemme sedlen.');
+            }
+            // No connection: it stays on this phone and goes when there is one.
+        } finally {
+            noteSaving = false;
+            if (noteSaveAgain) { noteSaveAgain = false; pushNote(); }
+        }
+    }
+
+    function changeNote(change) {
+        // Undo puts back the note as it was before a removal; after any
+        // other change since, that would undo the other change too.
+        if (noteUndo) { noteUndo = null; setNoteStatus(''); }
+        change(note.items);
+        note.changes++;
+        note.dirty = true;
+        saveNote();
+        renderNote();
+        clearTimeout(noteSaveTimer);
+        noteSaveTimer = setTimeout(pushNote, NOTE_SAVE_DELAY_MS);
+    }
+
+    function renderNote() {
+        const signedOut = authResolved && !me.authenticated;
+        const blocked = me.authenticated && me.role === 'blocked';
+        document.getElementById('note').hidden = !note && !signedOut && !blocked;
+        document.getElementById('note-signed-out').hidden = !signedOut || !!note;
+        document.getElementById('note-blocked').hidden = !blocked;
+        document.getElementById('note-body').hidden = !note;
+        if (!note) return;
+
+        // Rows are kept, not redrawn, so a tick strikes through with the
+        // same little animation as on the lists, and only new rows fade in.
+        const ul = document.getElementById('note-list');
+        const rows = Object.create(null);
+        Array.prototype.forEach.call(ul.children, function (li) { rows[li.dataset.id] = li; });
+        note.items.forEach(function (item, i) {
+            let li = rows[item.id];
+            if (li) delete rows[item.id];
+            else li = createNoteRow(item.id);
+            fillNoteRow(li, item);
+            if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] || null);
+        });
+        Object.keys(rows).forEach(function (id) { rows[id].remove(); });
+
+        const empty = note.items.length === 0;
+        document.getElementById('note-empty').hidden = !empty;
+        document.getElementById('note-actions').hidden = empty;
+        document.getElementById('note-clear').hidden = empty;
+        document.getElementById('note-sms').href = 'sms:?&body=' + encodeURIComponent(noteText());
+    }
+
+    function createNoteRow(id) {
+        const li = document.createElement('li');
+        li.className = 'task-item note-item';
+        li.dataset.id = id;
+        li.onclick = function (event) { toggleNoteItem(event, li); };
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        const text = document.createElement('div');
+        text.className = 'task-text';
+        text.appendChild(document.createElement('label'));
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'note-remove';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = function (event) {
+            event.stopPropagation();
+            removeNoteItem(li.dataset.id, removeBtn);
+        };
+
+        li.appendChild(checkbox);
+        li.appendChild(text);
+        li.appendChild(removeBtn);
+        return li;
+    }
+
+    function fillNoteRow(li, item) {
+        li.classList.toggle('completed', item.done);
+        const checkbox = li.querySelector('input[type="checkbox"]');
+        checkbox.checked = item.done;
+        checkbox.setAttribute('aria-label', item.text);
+        li.querySelector('label').textContent = item.text;
+        li.querySelector('.note-remove').setAttribute('aria-label', 'Slet "' + item.text + '"');
+    }
+
+    function toggleNoteItem(event, li) {
+        const checkbox = li.querySelector('input[type="checkbox"]');
+        const done = event.target === checkbox ? checkbox.checked : !checkbox.checked;
+        const id = li.dataset.id;
+        changeNote(function (items) {
+            items.forEach(function (it) { if (it.id === id) it.done = done; });
+        });
+    }
+
+    function newNoteId() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function addNoteItem(event) {
+        event.preventDefault();
+        const input = document.getElementById('note-input');
+        const text = input.value.trim().replace(/\s+/g, ' ').slice(0, NOTE_MAX_TEXT);
+        input.focus(); // the keyboard stays up for the next one
+        if (!text) input.value = '';
+        if (!text || !note) return;
+        if (note.items.length >= NOTE_MAX_ITEMS) {
+            setNoteStatus('Sedlen er fuld – slet nogle punkter først.');
+            return;
+        }
+        changeNote(function (items) { items.push({ id: newNoteId(), text: text, done: false }); });
+        input.value = '';
+    }
+
+    function removeNoteItem(id, button) {
+        const index = note.items.findIndex(function (it) { return it.id === id; });
+        if (index < 0) return;
+        const before = note.items.slice();
+        const removed = note.items[index];
+        // A keyboard user carries on from the next row's ×, not from nowhere.
+        let nextFocus = null;
+        if (button.matches(':focus-visible')) {
+            const row = button.closest('li');
+            const neighbour = row.nextElementSibling || row.previousElementSibling;
+            nextFocus = neighbour ? neighbour.querySelector('.note-remove') : document.getElementById('note-input');
+        }
+        changeNote(function (items) { items.splice(index, 1); });
+        offerNoteUndo('"' + removed.text + '" er slettet.', before);
+        if (nextFocus) nextFocus.focus();
+    }
+
+    function clearNote() {
+        if (!note || note.items.length === 0) return;
+        const before = note.items.slice();
+        changeNote(function (items) { items.length = 0; });
+        offerNoteUndo('Sedlen er ryddet.', before);
+    }
+
+    function offerNoteUndo(text, before) {
+        noteUndo = before.map(function (it) { return { id: it.id, text: it.text, done: it.done }; });
+        const undoBtn = document.createElement('button');
+        undoBtn.type = 'button';
+        undoBtn.className = 'inline-link';
+        undoBtn.textContent = 'Fortryd';
+        undoBtn.onclick = undoNote;
+        setNoteStatus(text + ' ', undoBtn);
+    }
+
+    function undoNote() {
+        if (!noteUndo) return;
+        const items = noteUndo;
+        noteUndo = null;
+        setNoteStatus('');
+        changeNote(function (list) { list.splice.apply(list, [0, list.length].concat(items)); });
+    }
+
+    function setNoteStatus(text, extra) {
+        const status = document.getElementById('note-status');
+        status.textContent = text;
+        if (extra) status.appendChild(extra);
+        clearTimeout(noteStatusTimer);
+        if (text) noteStatusTimer = setTimeout(function () { status.textContent = ''; noteUndo = null; }, NOTE_STATUS_MS);
+    }
+
+    // The note as plain text, ready for an sms: what's done is ticked.
+    function noteText() {
+        return 'Huskeseddel fra Enebakken:\n' + note.items.map(function (it) {
+            return (it.done ? '✓ ' : '• ') + it.text;
+        }).join('\n');
+    }
+
+    async function copyNote() {
+        if (!note || note.items.length === 0) return;
+        const text = noteText();
+        let copied = false;
+        try {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+        } catch (e) {
+            copied = copyWithSelection(text);
+        }
+        const btn = document.getElementById('note-copy');
+        if (copied) {
+            btn.textContent = 'Kopieret ✓';
+            setTimeout(function () { btn.textContent = 'Kopiér teksten'; }, 2500);
+            setNoteStatus('Sæt teksten ind i en sms.');
+        } else {
+            setNoteStatus('Kunne ikke kopiere – prøv igen.');
+        }
+    }
+
+    // For browsers without the clipboard API (or where it's refused).
+    function copyWithSelection(text) {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        area.setSelectionRange(0, text.length);
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        area.remove();
+        return ok;
+    }
+
+    // Off to the sms app (or anywhere): send a change still waiting at once.
+    // Back again: the note may have been changed on another phone meanwhile.
+    document.addEventListener('visibilitychange', function () {
+        if (!note || !me.authenticated) return;
+        if (document.visibilityState === 'hidden') { if (note.dirty) pushNote(); }
+        else syncNote();
+    });
 
     // ---------- shared ticks ----------
     // Signed in, the ticks on both lists are shared: each tap is sent to

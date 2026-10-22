@@ -27,6 +27,7 @@ export async function deleteAuthAccount(userId: string, email: string): Promise<
     await tx`delete from neon_auth.account where "userId" = ${userId}`;
     await tx`delete from neon_auth.verification where identifier = ${email}`;
     await tx`delete from members where user_id = ${userId}`;
+    await tx`delete from notes where user_id = ${userId}`;
     await tx`delete from neon_auth.user where id::text = ${userId}`;
   });
 }

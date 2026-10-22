@@ -154,12 +154,14 @@ check("DELETE of an unknown userId: 404", r.status === 404, r);
 r = await del(T["u-alice"], { userId: "u-alice" });
 check("an administrator can't be deleted — must be demoted first", r.status === 400 && r.body.error.includes("fjern administrator-status"), r);
 
-// give Dana a session, an oauth account, and a pending verification, plus a
-// photo she "uploaded" — everything a real account can have attached.
+// give Dana a session, an oauth account, a pending verification and a
+// personal note, plus a photo she "uploaded" — everything a real account
+// can have attached.
 await db`insert into neon_auth.session ("userId", token) values ('u-dana', 'sess-dana')`;
 await db`insert into neon_auth.account ("userId", "providerId") values ('u-dana', 'credential')`;
 await db`insert into neon_auth.verification (identifier, value) values ('dana@example.com', 'code-123')`;
 await db`insert into photos (object_key, uploaded_by) values ('photos/test-dana.jpg', 'u-dana')`;
+await db`insert into notes (user_id, items) values ('u-dana', ${db.json([{ id: "a", text: "Kaffe", done: false }])})`;
 
 r = await del(T["u-alice"], { userId: "u-dana" });
 check("delete succeeds", r.status === 200, r);
@@ -168,6 +170,7 @@ check("...her session is gone", (await db`select 1 from neon_auth.session where 
 check("...her oauth account row is gone", (await db`select 1 from neon_auth.account where "userId" = 'u-dana'`).length === 0);
 check("...her pending verification (by email) is gone", (await db`select 1 from neon_auth.verification where identifier = 'dana@example.com'`).length === 0);
 check("...any members row would be gone too (she had none here, but the query ran)", (await db`select 1 from members where user_id = 'u-dana'`).length === 0);
+check("...and so is her personal note", (await db`select 1 from notes where user_id = 'u-dana'`).length === 0);
 const photoAfter = (await db`select uploaded_by from photos where object_key = 'photos/test-dana.jpg'`)[0];
 check("her photo stays, uploaded_by simply now points at nobody", photoAfter && photoAfter.uploaded_by === "u-dana", photoAfter);
 await db`delete from photos where object_key = 'photos/test-dana.jpg'`;
